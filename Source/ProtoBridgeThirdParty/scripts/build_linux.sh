@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 set -e
 
 GRPC_VERSION="v1.76.0"
@@ -31,6 +31,7 @@ fi
 cd "$BUILD_DIR"
 
 cmake ../grpc \
+    -GNinja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR" \
     -DBUILD_SHARED_LIBS=ON \
@@ -45,7 +46,7 @@ cmake ../grpc \
     -DCMAKE_CXX_VISIBILITY_PRESET=hidden \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 
-cmake --build . --config Release --target install -j$(nproc)
+cmake --build . --config Release --target install
 
 cp "$INSTALL_DIR"/lib/*.so* "$FINAL_BIN_DIR/"
 cp "$INSTALL_DIR"/lib/*.so* "$FINAL_LIB_DIR/"
