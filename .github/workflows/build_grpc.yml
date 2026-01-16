@@ -10,6 +10,9 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
+      - name: Enable long paths for git
+        run: git config --global core.longpaths true
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -20,6 +23,9 @@ jobs:
 
       - name: Install NASM
         run: choco install nasm
+
+      - name: Setup MSVC Environment
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Run Build Script
         shell: pwsh
@@ -106,30 +112,3 @@ jobs:
             lib/Android
             includes
           retention-days: 1
-
-#  build-mac:
-#    runs-on: macos-14
-#    steps:
-#      - name: Checkout repository
-#        uses: actions/checkout@v4
-#
-#      - name: Setup Go
-#        uses: actions/setup-go@v5
-#        with:
-#          go-version: '1.22'
-#
-#      - name: Run Build Script
-#        run: |
-#          sed -i 's/\r$//' ./Source/ProtoBridgeThirdParty/scripts/build_mac.sh
-#          chmod +x ./Source/ProtoBridgeThirdParty/scripts/build_mac.sh
-#          ./Source/ProtoBridgeThirdParty/scripts/build_mac.sh
-#
-#      - name: Upload Artifacts
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: ProtoBridge-Mac
-#          path: |
-#            bin/Mac
-#            lib/Mac
-#            includes
-#          retention-days: 1

@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
 $GRPC_VERSION = "v1.76.0"
 $SCRIPT_DIR = $PSScriptRoot
@@ -31,8 +31,10 @@ else {
 Set-Location $BUILD_DIR
 
 cmake ../grpc `
+    -GNinja `
     -DCMAKE_BUILD_TYPE=Release `
     -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR `
+    -DCMAKE_VERBOSE_MAKEFILE=ON
     -DBUILD_SHARED_LIBS=ON `
     -DgRPC_INSTALL=ON `
     -DgRPC_BUILD_TESTS=OFF `
@@ -43,10 +45,9 @@ cmake ../grpc `
     -DgRPC_ZLIB_PROVIDER=module `
     -DgRPC_CARES_PROVIDER=module `
     -DgRPC_RE2_PROVIDER=module `
-    -DgRPC_PROTOBUF_PROVIDER=module `
-    -DCMAKE_VS_PLATFORM_TOOLSET_HOST_ARCH=x64
+    -DgRPC_PROTOBUF_PROVIDER=module
 
-cmake --build . --config Release --target install -j 16
+cmake --build . --config Release --target install
 
 Copy-Item -Path "$INSTALL_DIR\bin\*.dll" -Destination $FINAL_BIN_DIR -Force
 Copy-Item -Path "$INSTALL_DIR\lib\*.lib" -Destination $FINAL_LIB_DIR -Force

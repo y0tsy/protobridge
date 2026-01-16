@@ -13,6 +13,7 @@ FINAL_INCLUDE_DIR="$ROOT_DIR/includes"
 mkdir -p "$BUILD_DIR"
 mkdir -p "$FINAL_BIN_DIR"
 mkdir -p "$FINAL_LIB_DIR"
+mkdir -p "$FINAL_INCLUDE_DIR"
 
 cd "$SCRIPT_DIR"
 
@@ -43,7 +44,7 @@ cmake ../grpc \
     -DgRPC_CARES_PROVIDER=module \
     -DgRPC_RE2_PROVIDER=module \
     -DgRPC_PROTOBUF_PROVIDER=module \
-    -DCMAKE_CXX_VISIBILITY_PRESET=hidden \
+    -DCMAKE_CXX_STANDARD=17 \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 
 cmake --build . --config Release --target install
