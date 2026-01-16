@@ -39,8 +39,11 @@ cmake ../grpc `
     -Dprotobuf_BUILD_TESTS=OFF `
     -DgRPC_MSVC_STATIC_RUNTIME=OFF `
     -Dprotobuf_MSVC_STATIC_RUNTIME=OFF `
-    -DgRPC_SSL_PROVIDER=package `
-    -DgRPC_ZLIB_PROVIDER=package `
+    -DgRPC_SSL_PROVIDER=module `
+    -DgRPC_ZLIB_PROVIDER=module `
+    -DgRPC_CARES_PROVIDER=module `
+    -DgRPC_RE2_PROVIDER=module `
+    -DgRPC_PROTOBUF_PROVIDER=module `
     -DCMAKE_VS_PLATFORM_TOOLSET_HOST_ARCH=x64
 
 cmake --build . --config Release --target install -j 16

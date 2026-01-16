@@ -44,6 +44,11 @@ cmake ../grpc \
     -DgRPC_INSTALL=ON \
     -DgRPC_BUILD_TESTS=OFF \
     -Dprotobuf_BUILD_TESTS=OFF \
+    -DgRPC_SSL_PROVIDER=module \
+    -DgRPC_ZLIB_PROVIDER=module \
+    -DgRPC_CARES_PROVIDER=module \
+    -DgRPC_RE2_PROVIDER=module \
+    -DgRPC_PROTOBUF_PROVIDER=module \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 
 cmake --build . --config Release --target install -j$(nproc)
