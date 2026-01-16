@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "1.0",
+	"VersionName": "0.1",
 	"FriendlyName": "ProtoBridge",
 	"Description": "Google Protocol Buffers integration into Unreal Engine 5.",
 	"Category": "Other",
@@ -10,7 +10,7 @@
 	"DocsURL": "",
 	"MarketplaceURL": "",
 	"SupportURL": "",
-	"CanContainContent": true,
+	"CanContainContent": false,
 	"IsBetaVersion": false,
 	"IsExperimentalVersion": false,
 	"Installed": false,
