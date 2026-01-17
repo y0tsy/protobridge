@@ -22,7 +22,7 @@ public class ProtoBridgeThirdParty : ModuleRules
             string PlatformLibDir = Path.Combine(LibPath, "Win64");
             if (Directory.Exists(PlatformLibDir))
             {
-                string[] LibFiles = Directory.GetFiles(PlatformLibDir, "*.lib");
+                string[] LibFiles = Directory.GetFiles(PlatformLibDir, "*.lib", SearchOption.AllDirectories);
                 foreach (string LibFile in LibFiles)
                 {
                     PublicAdditionalLibraries.Add(LibFile);
@@ -34,51 +34,33 @@ public class ProtoBridgeThirdParty : ModuleRules
             string PlatformLibDir = Path.Combine(LibPath, "Linux");
             string PlatformBinDir = Path.Combine(BinPath, "Linux");
 
-            string[] SharedLibs = 
-            { 
-                "libprotobuf.so", 
-                "libgpr.so", 
-                "libgrpc.so", 
-                "libgrpc++.so" 
-            };
-
-            foreach (string LibName in SharedLibs)
+            if (Directory.Exists(PlatformLibDir))
             {
-                string LibFile = Path.Combine(PlatformLibDir, LibName);
-                string BinFile = Path.Combine(PlatformBinDir, LibName);
-
-                if (File.Exists(LibFile))
+                string[] LibFiles = Directory.GetFiles(PlatformLibDir, "*.so*", SearchOption.AllDirectories);
+                foreach (string LibFile in LibFiles)
                 {
                     PublicAdditionalLibraries.Add(LibFile);
-                    RuntimeDependencies.Add(BinFile);
+                    
+                    string FileName = Path.GetFileName(LibFile);
+                    string BinFile = Path.Combine(PlatformBinDir, FileName);
+                    if (File.Exists(BinFile))
+                    {
+                        RuntimeDependencies.Add(BinFile);
+                    }
                 }
             }
         }
         else if (Target.Platform == UnrealTargetPlatform.Android)
         {
             string PlatformLibDir = Path.Combine(LibPath, "Android", "arm64-v8a");
-            
-            string[] AndroidLibs = 
-            { 
-                "libprotobuf.so", 
-                "libgrpc++.so", 
-                "libgrpc.so" 
-            };
-
-            foreach (string LibName in AndroidLibs)
+            if (Directory.Exists(PlatformLibDir))
             {
-                string FullPath = Path.Combine(PlatformLibDir, LibName);
-                if (File.Exists(FullPath))
+                string[] LibFiles = Directory.GetFiles(PlatformLibDir, "*.so", SearchOption.AllDirectories);
+                foreach (string LibFile in LibFiles)
                 {
-                    PublicAdditionalLibraries.Add(FullPath);
+                    PublicAdditionalLibraries.Add(LibFile);
                 }
             }
-        }
-        else if (Target.Platform == UnrealTargetPlatform.IOS)
-        {
-            string FrameworkPath = Path.Combine(LibPath, "IOS");
-            PublicAdditionalFrameworks.Add(new Framework("gRPC", Path.Combine(FrameworkPath, "grpc.framework.zip")));
-            PublicAdditionalFrameworks.Add(new Framework("Protobuf", Path.Combine(FrameworkPath, "protobuf.framework.zip")));
         }
     }
 }
