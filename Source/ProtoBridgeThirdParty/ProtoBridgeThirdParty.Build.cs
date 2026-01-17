@@ -9,7 +9,11 @@ public class ProtoBridgeThirdParty : ModuleRules
         Type = ModuleType.External;
 
         PublicDefinitions.Add("WITH_GRPC=1");
-
+        PublicDefinitions.Add("ABSL_CONSUME_DLL=0");
+        
+        bEnableExceptions = true;
+        bUseRTTI = true;
+        
         string ThirdPartyPath = ModuleDirectory;
         string IncludePath = Path.Combine(ThirdPartyPath, "includes");
         string LibPath = Path.Combine(ThirdPartyPath, "lib");
