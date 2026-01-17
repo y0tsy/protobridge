@@ -53,13 +53,12 @@ cmake ../grpc `
 
 cmake --build . --config Release --target install
 
-if (Test-Path "$INSTALL_DIR\bin") {
-    Copy-Item -Path "$INSTALL_DIR\bin\*.exe" -Destination $FINAL_BIN_DIR -Force
-} else {
-    Write-Warning "Bin folder not found"
-}
+Remove-Item -Path (Join-Path $INSTALL_DIR "lib\cmake") -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $INSTALL_DIR "lib\pkgconfig") -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $INSTALL_DIR "share") -Recurse -Force -ErrorAction SilentlyContinue
 
-Copy-Item -Path "$INSTALL_DIR\lib\*.lib" -Destination $FINAL_LIB_DIR -Force
+Copy-Item -Path "$INSTALL_DIR\bin\*" -Destination $FINAL_BIN_DIR -Recurse -Force
+Copy-Item -Path "$INSTALL_DIR\lib\*" -Destination $FINAL_LIB_DIR -Recurse -Force
 Copy-Item -Path "$INSTALL_DIR\include\*" -Destination $FINAL_INCLUDE_DIR -Recurse -Force
 
 Write-Host "Windows Build Complete."

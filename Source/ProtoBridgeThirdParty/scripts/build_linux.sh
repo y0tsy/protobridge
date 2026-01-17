@@ -53,8 +53,12 @@ cmake ../grpc \
 
 cmake --build . --config Release --target install
 
-cp "$INSTALL_DIR"/lib/*.so* "$FINAL_BIN_DIR/"
-cp "$INSTALL_DIR"/lib/*.so* "$FINAL_LIB_DIR/"
+rm -rf "$INSTALL_DIR/lib/cmake"
+rm -rf "$INSTALL_DIR/lib/pkgconfig"
+rm -rf "$INSTALL_DIR/share"
+
+cp -r "$INSTALL_DIR"/bin/* "$FINAL_BIN_DIR/" 2>/dev/null || true
+cp -r "$INSTALL_DIR"/lib/* "$FINAL_LIB_DIR/"
 cp -r "$INSTALL_DIR"/include/* "$FINAL_INCLUDE_DIR/"
 
 echo "Linux Build Complete."
