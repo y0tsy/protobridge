@@ -37,6 +37,7 @@ cmake ../grpc \
     -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR" \
     -DCMAKE_CXX_FLAGS="-Wno-trigraphs -Wno-attributes -Wno-return-type" \
     -DCMAKE_C_FLAGS="-Wno-trigraphs -Wno-attributes -Wno-return-type" \
+    -DCMAKE_CXX_STANDARD=20 \
     -DBUILD_SHARED_LIBS=ON \
     -DgRPC_INSTALL=ON \
     -DgRPC_BUILD_TESTS=OFF \
