@@ -2,6 +2,9 @@ name: Build gRPC Libraries
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'Source/ProtoBridgeThirdParty/scripts/**'
 
 jobs:
   build-windows:
