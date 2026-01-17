@@ -35,9 +35,13 @@ cmake ../grpc \
     -GNinja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR" \
+    -DCMAKE_CXX_FLAGS="-Wno-trigraphs -Wno-attributes -Wno-return-type" \
+    -DCMAKE_C_FLAGS="-Wno-trigraphs -Wno-attributes -Wno-return-type" \
     -DBUILD_SHARED_LIBS=ON \
     -DgRPC_INSTALL=ON \
     -DgRPC_BUILD_TESTS=OFF \
+    -Dprotobuf_BUILD_PROTOC_BINARIES=ON \
+    -DgRPC_BUILD_CODEGEN=ON \
     -Dprotobuf_BUILD_TESTS=OFF \
     -DgRPC_SSL_PROVIDER=module \
     -DgRPC_ZLIB_PROVIDER=module \

@@ -2,9 +2,6 @@ name: Build gRPC Libraries
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'Source/ProtoBridgeThirdParty/scripts/**'
 
 jobs:
   build-windows:
@@ -16,10 +13,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: windows-grpc-${{ github.ref_name }}
+          restore-keys: |
+            windows-grpc-
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+          cache: true
 
       - name: Install NASM
         run: choco install nasm
@@ -31,15 +36,18 @@ jobs:
         shell: pwsh
         run: |
           ./Source/ProtoBridgeThirdParty/scripts/build_win64.ps1
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ProtoBridge-Win64
           path: |
-            bin/Win64
-            lib/Win64
-            includes
+            Source/ProtoBridgeThirdParty/bin/Win64
+            Source/ProtoBridgeThirdParty/lib/Win64
+            Source/ProtoBridgeThirdParty/includes
           retention-days: 1
 
   build-linux:
@@ -48,10 +56,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-grpc-${{ github.ref_name }}
+          restore-keys: |
+            linux-grpc-
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+          cache: true
 
       - name: Install Dependencies
         run: |
@@ -63,15 +79,18 @@ jobs:
           sed -i 's/\r$//' ./Source/ProtoBridgeThirdParty/scripts/build_linux.sh
           chmod +x ./Source/ProtoBridgeThirdParty/scripts/build_linux.sh
           ./Source/ProtoBridgeThirdParty/scripts/build_linux.sh
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ProtoBridge-Linux
           path: |
-            bin/Linux
-            lib/Linux
-            includes
+            Source/ProtoBridgeThirdParty/bin/Linux
+            Source/ProtoBridgeThirdParty/lib/Linux
+            Source/ProtoBridgeThirdParty/includes
           retention-days: 1
 
   build-android:
@@ -80,10 +99,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: android-grpc-${{ github.ref_name }}
+          restore-keys: |
+            android-grpc-
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+          cache: true
 
       - name: Install Dependencies
         run: |
@@ -103,12 +130,14 @@ jobs:
           ./Source/ProtoBridgeThirdParty/scripts/build_android.sh
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ProtoBridge-Android
           path: |
-            lib/Android
-            includes
+            Source/ProtoBridgeThirdParty/lib/Android
+            Source/ProtoBridgeThirdParty/includes
           retention-days: 1
