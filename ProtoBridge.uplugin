@@ -19,6 +19,11 @@
 			"Name": "ProtoBridge",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "ProtoBridgeCore",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
 		}
 	]
 }
