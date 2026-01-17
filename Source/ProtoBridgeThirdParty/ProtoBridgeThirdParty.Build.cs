@@ -19,6 +19,18 @@ public class ProtoBridgeThirdParty : ModuleRules
 
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
+            string PlatformBinDir = Path.Combine(BinPath, "Win64");
+            if (Directory.Exists(PlatformBinDir))
+            {
+                string[] BinFiles = Directory.GetFiles(PlatformBinDir, "*.dll", SearchOption.AllDirectories);
+                foreach (string BinFile in BinFiles)
+                {
+                    RuntimeDependencies.Add(BinFile);
+                    string FileName = Path.GetFileName(BinFile);
+                    PublicDelayLoadDLLs.Add(FileName);
+                }
+            }
+            
             string PlatformLibDir = Path.Combine(LibPath, "Win64");
             if (Directory.Exists(PlatformLibDir))
             {
