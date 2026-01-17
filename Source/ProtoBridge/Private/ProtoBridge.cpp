@@ -1,20 +1,44 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
-
 #include "ProtoBridge.h"
 
-#define LOCTEXT_NAMESPACE "FProtoBridgeModule"
+#include "grpcpp/grpcpp.h"
+#include "google/protobuf/stubs/common.h"
+
+DEFINE_LOG_CATEGORY(LogProtoBridge);
 
 void FProtoBridgeModule::StartupModule()
 {
-	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
+	PerformGRPCHealthCheck();
 }
 
 void FProtoBridgeModule::ShutdownModule()
 {
-	// This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
-	// we call this function before unloading the module.
+	google::protobuf::ShutdownProtobufLibrary();
 }
 
-#undef LOCTEXT_NAMESPACE
-	
+void FProtoBridgeModule::PerformGRPCHealthCheck()
+{
+	GOOGLE_PROTOBUF_VERIFY_VERSION;
+
+	FString ProtobufVersion = FString(google::protobuf::internal::VersionString(GOOGLE_PROTOBUF_VERSION).c_str());
+	FString GRPCVersion = FString(grpc::Version().c_str());
+
+	UE_LOG(LogProtoBridge, Log, TEXT("ProtoBridge: Protobuf version verified: %s"), *ProtobufVersion);
+	UE_LOG(LogProtoBridge, Log, TEXT("ProtoBridge: gRPC version: %s"), *GRPCVersion);
+
+	try
+	{
+		auto Credentials = grpc::InsecureChannelCredentials();
+		auto Channel = grpc::CreateChannel("localhost:0", Credentials);
+		
+		if (Channel)
+		{
+			UE_LOG(LogProtoBridge, Log, TEXT("ProtoBridge: gRPC runtime sanity check passed."));
+		}
+	}
+	catch (...)
+	{
+		UE_LOG(LogProtoBridge, Error, TEXT("ProtoBridge: gRPC runtime sanity check failed with exception."));
+	}
+}
+
 IMPLEMENT_MODULE(FProtoBridgeModule, ProtoBridge)
