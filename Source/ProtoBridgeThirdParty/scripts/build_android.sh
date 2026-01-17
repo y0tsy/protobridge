@@ -41,6 +41,8 @@ cmake ../grpc \
     -GNinja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR_HOST" \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
     -DBUILD_SHARED_LIBS=OFF \
     -DgRPC_BUILD_TESTS=OFF \
     -Dprotobuf_BUILD_TESTS=OFF \
@@ -66,6 +68,8 @@ cmake ../grpc \
     -DANDROID_STL=c++_shared \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR" \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
     -DBUILD_SHARED_LIBS=ON \
     -DgRPC_INSTALL=ON \
     -DgRPC_BUILD_TESTS=OFF \

@@ -102,6 +102,7 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
+          max-size: "5G"
           key: android-grpc-${{ github.ref_name }}
           restore-keys: |
             android-grpc-
