@@ -9,8 +9,7 @@ public class ProtoBridgeThirdParty : ModuleRules
         Type = ModuleType.External;
 
         PublicDefinitions.Add("WITH_GRPC=1");
-        PublicDefinitions.Add("ABSL_CONSUME_DLL=0");
-        
+
         bEnableExceptions = true;
         bUseRTTI = true;
         
