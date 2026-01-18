@@ -1,4 +1,6 @@
-﻿cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.15)
+
+set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
 
 project(ProtoBridgeGenerator LANGUAGES CXX)
 
@@ -6,10 +8,16 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Protobuf REQUIRED)
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+find_package(absl CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(utf8_range CONFIG)
 
 add_executable(bridge_generator
-    Private/ProtoBridgeGenerator.cpp
+    Private/ProtobufGenerator.cpp
     Private/CodeBuilder.h
     Private/DependencySorter.h
     Private/GeneratorContext.h
