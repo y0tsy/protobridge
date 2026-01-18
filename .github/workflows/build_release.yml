@@ -1,0 +1,265 @@
+name: Build ProtoBridge Full Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - 'Source/ProtoBridgeGenerator/**'
+      - 'Source/ProtoBridgeThirdParty/scripts/**'
+      - '.github/workflows/build_release.yml'
+
+env:
+  GRPC_VERSION: v1.76.0
+
+jobs:
+  build-windows-msvc:
+    name: Build Windows (MSVC)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: powershell
+
+    steps:
+    - name: Enable long paths for git
+      run: git config --global core.longpaths true
+
+    - uses: actions/checkout@v4
+
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Setup CMake
+      uses: lukka/get-cmake@latest
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: windows-msvc-ccache-${{ env.GRPC_VERSION }}
+        variant: sccache
+
+    - name: Restore gRPC Cache
+      id: cache-windows
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/gRPC_Cache
+        key: ${{ runner.os }}-msvc-md-grpc-${{ env.GRPC_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_win64.ps1') }}
+
+    - name: Build Win64
+      run: |
+        & ./Source/ProtoBridgeThirdParty/scripts/build_win64.ps1 -GrpcVersion ${{ env.GRPC_VERSION }} -CacheDir "${{ github.workspace }}\gRPC_Cache" -CompilerLauncher "sccache"
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: part-windows
+        path: |
+          Source/ProtoBridgeThirdParty/bin/Win64
+          Source/ProtoBridgeThirdParty/lib/Win64
+          Source/ProtoBridgeThirdParty/includes
+        retention-days: 1
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake git ninja-build
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: linux-ccache-${{ env.GRPC_VERSION }}
+
+    - name: Restore gRPC Cache
+      id: cache-linux
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/gRPC_Cache
+        key: ${{ runner.os }}-grpc-${{ env.GRPC_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_linux.sh') }}
+
+    - name: Build Linux
+      run: |
+        chmod +x Source/ProtoBridgeThirdParty/scripts/build_linux.sh
+        ./Source/ProtoBridgeThirdParty/scripts/build_linux.sh --grpc-version ${{ env.GRPC_VERSION }} --cache-dir "${{ github.workspace }}/gRPC_Cache" --compiler-launcher ccache
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: part-linux
+        path: |
+          Source/ProtoBridgeThirdParty/bin/Linux
+          Source/ProtoBridgeThirdParty/lib/Linux
+          Source/ProtoBridgeThirdParty/includes
+        retention-days: 1
+
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake git ninja-build
+
+    - name: Setup Android NDK
+      id: setup-ndk
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r26d
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: android-ccache-${{ env.GRPC_VERSION }}
+
+    - name: Restore gRPC Cache
+      id: cache-android
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/gRPC_Cache
+        key: ${{ runner.os }}-android-grpc-${{ env.GRPC_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_android.sh') }}
+
+    - name: Build Android
+      run: |
+        chmod +x Source/ProtoBridgeThirdParty/scripts/build_android.sh
+        ./Source/ProtoBridgeThirdParty/scripts/build_android.sh --grpc-version ${{ env.GRPC_VERSION }} --cache-dir "${{ github.workspace }}/gRPC_Cache" --compiler-launcher ccache
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: part-android
+        path: |
+          Source/ProtoBridgeThirdParty/lib/Android
+          Source/ProtoBridgeThirdParty/includes
+        retention-days: 1
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-14
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: |
+        brew install ninja cmake
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: macos-ccache-${{ env.GRPC_VERSION }}
+
+    - name: Restore gRPC Cache
+      id: cache-macos
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/gRPC_Cache
+        key: ${{ runner.os }}-grpc-${{ env.GRPC_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_macos.sh') }}
+
+    - name: Build macOS
+      run: |
+        chmod +x Source/ProtoBridgeThirdParty/scripts/build_macos.sh
+        ./Source/ProtoBridgeThirdParty/scripts/build_macos.sh --grpc-version ${{ env.GRPC_VERSION }} --cache-dir "${{ github.workspace }}/gRPC_Cache" --compiler-launcher ccache
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: part-macos
+        path: |
+          Source/ProtoBridgeThirdParty/bin/Mac
+          Source/ProtoBridgeThirdParty/lib/Mac
+          Source/ProtoBridgeThirdParty/includes
+        retention-days: 1
+
+  build-ios:
+    name: Build iOS
+    runs-on: macos-14
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: |
+        brew install ninja cmake
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ios-ccache-${{ env.GRPC_VERSION }}
+
+    - name: Restore gRPC Cache
+      id: cache-ios
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/gRPC_Cache
+        key: ${{ runner.os }}-ios-grpc-${{ env.GRPC_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_ios.sh') }}
+
+    - name: Build iOS
+      run: |
+        chmod +x Source/ProtoBridgeThirdParty/scripts/build_ios.sh
+        ./Source/ProtoBridgeThirdParty/scripts/build_ios.sh --grpc-version ${{ env.GRPC_VERSION }} --cache-dir "${{ github.workspace }}/gRPC_Cache" --compiler-launcher ccache
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: part-ios
+        path: |
+          Source/ProtoBridgeThirdParty/lib/IOS
+          Source/ProtoBridgeThirdParty/includes
+        retention-days: 1
+
+  assemble-plugin:
+    name: Assemble Final Package
+    runs-on: ubuntu-latest
+    needs: [build-windows-msvc, build-linux, build-android, build-macos, build-ios]
+
+    steps:
+    - name: Download Windows Part
+      uses: actions/download-artifact@v4
+      with:
+        name: part-windows
+        path: ProtoBridgeThirdParty
+
+    - name: Download Linux Part
+      uses: actions/download-artifact@v4
+      with:
+        name: part-linux
+        path: ProtoBridgeThirdParty
+
+    - name: Download Android Part
+      uses: actions/download-artifact@v4
+      with:
+        name: part-android
+        path: ProtoBridgeThirdParty
+
+    - name: Download macOS Part
+      uses: actions/download-artifact@v4
+      with:
+        name: part-macos
+        path: ProtoBridgeThirdParty
+
+    - name: Download iOS Part
+      uses: actions/download-artifact@v4
+      with:
+        name: part-ios
+        path: ProtoBridgeThirdParty
+
+    - name: Inspect Structure
+      run: ls -R ProtoBridgeThirdParty
+
+    - name: Upload Final ThirdParty
+      uses: actions/upload-artifact@v4
+      with:
+        name: ProtoBridgeThirdParty-AllPlatforms
+        path: ProtoBridgeThirdParty
