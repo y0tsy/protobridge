@@ -2,6 +2,7 @@
 #include "ProtoBridgeDefs.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
+#include "Internationalization/Regex.h"
 
 static void AppendExecutableExtension(FString& Path)
 {
@@ -56,27 +57,17 @@ FString FPathResolverWorker::ResolveDirectory(const FString& PathWithPlaceholder
 		}
 	}
 
-	int32 StartIdx = 0;
-	while ((StartIdx = Result.Find(TEXT("{Plugin:"), ESearchCase::IgnoreCase, ESearchDir::FromStart, StartIdx)) != INDEX_NONE)
-	{
-		int32 EndIdx = Result.Find(TEXT("}"), ESearchCase::IgnoreCase, ESearchDir::FromStart, StartIdx);
-		if (EndIdx != INDEX_NONE)
-		{
-			FString Placeholder = Result.Mid(StartIdx, EndIdx - StartIdx + 1);
-			FString PluginName = Placeholder.Mid(8, Placeholder.Len() - 9); 
+	const FRegexPattern PluginPattern(TEXT("\\{Plugin:([a-zA-Z0-9_]+)\\}"));
+	FRegexMatcher Matcher(PluginPattern, Result);
 
-			if (TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(PluginName))
-			{
-				Result = Result.Replace(*Placeholder, *Plugin->GetBaseDir());
-			}
-			else
-			{
-				StartIdx = EndIdx + 1;
-			}
-		}
-		else
+	while (Matcher.FindNext())
+	{
+		FString Placeholder = Matcher.GetCaptureGroup(0);
+		FString PluginName = Matcher.GetCaptureGroup(1);
+
+		if (TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(PluginName))
 		{
-			break;
+			Result = Result.Replace(*Placeholder, *Plugin->GetBaseDir());
 		}
 	}
 
