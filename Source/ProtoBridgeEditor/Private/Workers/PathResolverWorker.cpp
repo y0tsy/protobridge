@@ -20,7 +20,7 @@ FString FPathResolverWorker::ResolveProtocPath(const FString& CustomPath) const
 		return CustomPath;
 	}
 
-	FString BinaryPath = FPaths::Combine(GetThirdPartyBinDir(), TEXT("protoc"));
+	FString BinaryPath = FPaths::Combine(GetThirdPartyBinDir(), FProtoBridgeDefs::ProtocExecutable);
 	AppendExecutableExtension(BinaryPath);
 
 	return FPaths::ConvertRelativePathToFull(BinaryPath);
@@ -33,7 +33,7 @@ FString FPathResolverWorker::ResolvePluginPath(const FString& CustomPath) const
 		return CustomPath;
 	}
 
-	FString PluginPath = FPaths::Combine(GetThirdPartyBinDir(), TEXT("bridge_generator"));
+	FString PluginPath = FPaths::Combine(GetThirdPartyBinDir(), FProtoBridgeDefs::PluginExecutable);
 	AppendExecutableExtension(PluginPath);
 
 	return FPaths::ConvertRelativePathToFull(PluginPath);
@@ -45,14 +45,14 @@ FString FPathResolverWorker::ResolveDirectory(const FString& PathWithPlaceholder
 
 	if (Result.Contains(TEXT("{Project}")))
 	{
-		Result = Result.Replace(TEXT("{Project}"), *FPaths::ConvertRelativePathToFull(FPaths::ProjectDir()));
+		Result = Result.Replace(TEXT("{Project}"), *FPaths::ProjectDir());
 	}
 
 	if (Result.Contains(TEXT("{ProtoBridgePlugin}")))
 	{
 		if (TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(FProtoBridgeDefs::PluginName))
 		{
-			Result = Result.Replace(TEXT("{ProtoBridgePlugin}"), *FPaths::ConvertRelativePathToFull(Plugin->GetBaseDir()));
+			Result = Result.Replace(TEXT("{ProtoBridgePlugin}"), *Plugin->GetBaseDir());
 		}
 	}
 
@@ -67,7 +67,7 @@ FString FPathResolverWorker::ResolveDirectory(const FString& PathWithPlaceholder
 
 			if (TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(PluginName))
 			{
-				Result = Result.Replace(*Placeholder, *FPaths::ConvertRelativePathToFull(Plugin->GetBaseDir()));
+				Result = Result.Replace(*Placeholder, *Plugin->GetBaseDir());
 			}
 			else
 			{
@@ -80,15 +80,16 @@ FString FPathResolverWorker::ResolveDirectory(const FString& PathWithPlaceholder
 		}
 	}
 
-	FPaths::NormalizeDirectoryName(Result);
-	return Result;
+	FString FullPath = FPaths::ConvertRelativePathToFull(Result);
+	FPaths::NormalizeDirectoryName(FullPath);
+	return FullPath;
 }
 
 FString FPathResolverWorker::GetThirdPartyBinDir() const
 {
 	if (TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(FProtoBridgeDefs::PluginName))
 	{
-		return FPaths::Combine(Plugin->GetBaseDir(), TEXT("Source"), TEXT("ProtoBridgeThirdParty"), TEXT("bin"), GetPlatformName());
+		return FPaths::Combine(Plugin->GetBaseDir(), FProtoBridgeDefs::SourceFolder, FProtoBridgeDefs::ThirdPartyFolder, FProtoBridgeDefs::BinFolder, GetPlatformName());
 	}
 	return FString();
 }
