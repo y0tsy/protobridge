@@ -4,6 +4,8 @@
 #include "Interfaces/Workers/IFileDiscoveryWorker.h"
 #include "Interfaces/Workers/ICommandBuilderWorker.h"
 #include "Settings/ProtoBridgeSettings.h"
+#include "Async/Async.h"
+#include "Misc/ScopeLock.h"
 
 FProtoBridgeCompilerService::FProtoBridgeCompilerService(TSharedPtr<IProtoBridgeWorkerFactory> InFactory)
 	: WorkerFactory(InFactory)
@@ -29,84 +31,91 @@ void FProtoBridgeCompilerService::CompileAll()
 	TaskQueue.Empty();
 
 	CompilationStartedDelegate.Broadcast();
-	LogMessageDelegate.Broadcast(TEXT("Starting ProtoBridge compilation..."), ELogVerbosity::Log);
+	LogMessageDelegate.Broadcast(TEXT("Preparing build..."), ELogVerbosity::Log);
 
 	const UProtoBridgeSettings* Settings = GetDefault<UProtoBridgeSettings>();
-	if (!Settings)
-	{
-		LogMessageDelegate.Broadcast(TEXT("Failed to load settings."), ELogVerbosity::Error);
-		CompilationFinishedDelegate.Broadcast(false, TEXT("Settings not found"));
-		bIsActive = false;
-		return;
-	}
-
+	
 	TSharedPtr<IPathResolverWorker> PathResolver = WorkerFactory->CreatePathResolver();
 	TSharedPtr<IFileDiscoveryWorker> FileDiscovery = WorkerFactory->CreateFileDiscovery();
 	TSharedPtr<ICommandBuilderWorker> CommandBuilder = WorkerFactory->CreateCommandBuilder();
 
 	FString ProtocPath = PathResolver->ResolveProtocPath(Settings->CustomProtocPath.FilePath);
 	FString PluginPath = PathResolver->ResolvePluginPath(Settings->CustomPluginPath.FilePath);
+	FString ApiMacro = Settings->ApiMacroName;
+	
+	TArray<FProtoBridgeMapping> MappingsCopy = Settings->Mappings;
 
-	if (!FPaths::FileExists(ProtocPath))
+	Async(EAsyncExecution::TaskGraph, [this, PathResolver, FileDiscovery, CommandBuilder, ProtocPath, PluginPath, ApiMacro, MappingsCopy]()
 	{
-		LogMessageDelegate.Broadcast(FString::Printf(TEXT("Protoc executable not found at: %s"), *ProtocPath), ELogVerbosity::Error);
-		CompilationFinishedDelegate.Broadcast(false, TEXT("Protoc not found"));
-		bIsActive = false;
-		return;
-	}
-
-	if (!FPaths::FileExists(PluginPath))
-	{
-		LogMessageDelegate.Broadcast(FString::Printf(TEXT("Plugin executable not found at: %s"), *PluginPath), ELogVerbosity::Error);
-		CompilationFinishedDelegate.Broadcast(false, TEXT("Plugin not found"));
-		bIsActive = false;
-		return;
-	}
-
-	for (const FProtoBridgeMapping& Mapping : Settings->Mappings)
-	{
-		FString SourceDir = PathResolver->ResolveDirectory(Mapping.SourcePath.Path);
-		FString DestDir = PathResolver->ResolveDirectory(Mapping.DestinationPath.Path);
-
-		if (SourceDir.IsEmpty() || DestDir.IsEmpty())
+		if (!FPaths::FileExists(ProtocPath))
 		{
-			LogMessageDelegate.Broadcast(TEXT("Invalid source or destination path in settings"), ELogVerbosity::Warning);
-			continue;
+			AsyncTask(ENamedThreads::GameThread, [this, ProtocPath]()
+			{
+				LogMessageDelegate.Broadcast(FString::Printf(TEXT("Protoc executable not found at: %s"), *ProtocPath), ELogVerbosity::Error);
+				CompilationFinishedDelegate.Broadcast(false, TEXT("Protoc not found"));
+				bIsActive = false;
+			});
+			return;
 		}
 
-		TArray<FString> ProtoFiles = FileDiscovery->FindProtoFiles(SourceDir, Mapping.bRecursive, Mapping.Blacklist);
-
-		if (ProtoFiles.Num() == 0)
+		if (!FPaths::FileExists(PluginPath))
 		{
-			LogMessageDelegate.Broadcast(FString::Printf(TEXT("No .proto files found in: %s"), *SourceDir), ELogVerbosity::Warning);
-			continue;
+			AsyncTask(ENamedThreads::GameThread, [this, PluginPath]()
+			{
+				LogMessageDelegate.Broadcast(FString::Printf(TEXT("Plugin executable not found at: %s"), *PluginPath), ELogVerbosity::Error);
+				CompilationFinishedDelegate.Broadcast(false, TEXT("Plugin not found"));
+				bIsActive = false;
+			});
+			return;
 		}
 
-		FProtoBridgeCommandArgs Args;
-		Args.ProtocPath = ProtocPath;
-		Args.PluginPath = PluginPath;
-		Args.SourceDirectory = SourceDir;
-		Args.DestinationDirectory = DestDir;
-		Args.ProtoFiles = ProtoFiles;
-		Args.ApiMacro = Settings->ApiMacroName;
+		TArray<FCompilationTask> GeneratedTasks;
 
-		FCompilationTask Task;
-		Task.ProtocPath = ProtocPath;
-		Task.Arguments = CommandBuilder->BuildCommand(Args);
-		Task.SourceDir = SourceDir;
+		for (const FProtoBridgeMapping& Mapping : MappingsCopy)
+		{
+			FString SourceDir = PathResolver->ResolveDirectory(Mapping.SourcePath.Path);
+			FString DestDir = PathResolver->ResolveDirectory(Mapping.DestinationPath.Path);
 
-		TaskQueue.Add(Task);
-	}
+			if (SourceDir.IsEmpty() || DestDir.IsEmpty()) continue;
 
-	if (TaskQueue.Num() > 0)
-	{
-		StartNextTask();
-	}
-	else
-	{
-		CompilationFinishedDelegate.Broadcast(true, TEXT("Nothing to compile"));
-		bIsActive = false;
-	}
+			TArray<FString> ProtoFiles = FileDiscovery->FindProtoFiles(SourceDir, Mapping.bRecursive, Mapping.Blacklist);
+
+			if (ProtoFiles.Num() == 0) continue;
+
+			FProtoBridgeCommandArgs Args;
+			Args.ProtocPath = ProtocPath;
+			Args.PluginPath = PluginPath;
+			Args.SourceDirectory = SourceDir;
+			Args.DestinationDirectory = DestDir;
+			Args.ProtoFiles = ProtoFiles;
+			Args.ApiMacro = ApiMacro;
+
+			FCompilationTask Task;
+			Task.ProtocPath = ProtocPath;
+			Task.Arguments = CommandBuilder->BuildCommand(Args);
+			Task.SourceDir = SourceDir;
+
+			if (!Task.Arguments.IsEmpty())
+			{
+				GeneratedTasks.Add(Task);
+			}
+		}
+
+		AsyncTask(ENamedThreads::GameThread, [this, GeneratedTasks]()
+		{
+			if (GeneratedTasks.Num() == 0)
+			{
+				LogMessageDelegate.Broadcast(TEXT("No files to compile."), ELogVerbosity::Warning);
+				CompilationFinishedDelegate.Broadcast(true, TEXT("Nothing to compile"));
+				bIsActive = false;
+			}
+			else
+			{
+				TaskQueue = GeneratedTasks;
+				StartNextTask();
+			}
+		});
+	});
 }
 
 void FProtoBridgeCompilerService::Cancel()
@@ -131,15 +140,12 @@ bool FProtoBridgeCompilerService::IsCompiling() const
 
 void FProtoBridgeCompilerService::StartNextTask()
 {
-	if (!bIsActive)
-	{
-		return;
-	}
+	if (!bIsActive) return;
 
 	if (TaskQueue.Num() == 0)
 	{
 		bIsActive = false;
-		CompilationFinishedDelegate.Broadcast(!bHasErrors, bHasErrors ? TEXT("Compilation finished with errors") : TEXT("Compilation finished successfully"));
+		CompilationFinishedDelegate.Broadcast(!bHasErrors, bHasErrors ? TEXT("Finished with errors") : TEXT("Success"));
 		return;
 	}
 
@@ -150,7 +156,7 @@ void FProtoBridgeCompilerService::StartNextTask()
 
 void FProtoBridgeCompilerService::ProcessTask(const FCompilationTask& Task)
 {
-	LogMessageDelegate.Broadcast(FString::Printf(TEXT("Compiling directory: %s"), *Task.SourceDir), ELogVerbosity::Display);
+	LogMessageDelegate.Broadcast(FString::Printf(TEXT("Compiling: %s"), *Task.SourceDir), ELogVerbosity::Display);
 
 	CurrentProcess = MakeShared<FMonitoredProcess>(Task.ProtocPath, Task.Arguments, true);
 	
@@ -160,7 +166,7 @@ void FProtoBridgeCompilerService::ProcessTask(const FCompilationTask& Task)
 
 	if (!CurrentProcess->Launch())
 	{
-		LogMessageDelegate.Broadcast(TEXT("Failed to launch protoc process"), ELogVerbosity::Error);
+		LogMessageDelegate.Broadcast(TEXT("Failed to launch protoc"), ELogVerbosity::Error);
 		bHasErrors = true;
 		StartNextTask(); 
 	}
@@ -173,11 +179,11 @@ void FProtoBridgeCompilerService::HandleProcessOutput(FString Output)
 	if (!Output.IsEmpty())
 	{
 		ELogVerbosity::Type Verbosity = ELogVerbosity::Display;
-		if (Output.Contains(TEXT("error")) || Output.Contains(TEXT("Exception")))
+		if (Output.Contains(TEXT("error"), ESearchCase::IgnoreCase) || Output.Contains(TEXT("Exception"), ESearchCase::IgnoreCase))
 		{
 			Verbosity = ELogVerbosity::Error;
 		}
-		else if (Output.Contains(TEXT("warning")))
+		else if (Output.Contains(TEXT("warning"), ESearchCase::IgnoreCase))
 		{
 			Verbosity = ELogVerbosity::Warning;
 		}
@@ -192,7 +198,7 @@ void FProtoBridgeCompilerService::HandleProcessCompleted(int32 ReturnCode)
 
 	if (ReturnCode != 0)
 	{
-		LogMessageDelegate.Broadcast(FString::Printf(TEXT("Process exited with code %d"), ReturnCode), ELogVerbosity::Error);
+		LogMessageDelegate.Broadcast(FString::Printf(TEXT("Exited with code %d"), ReturnCode), ELogVerbosity::Error);
 		bHasErrors = true;
 	}
 
@@ -202,6 +208,6 @@ void FProtoBridgeCompilerService::HandleProcessCompleted(int32 ReturnCode)
 
 void FProtoBridgeCompilerService::HandleProcessCanceled()
 {
-	LogMessageDelegate.Broadcast(TEXT("Process canceled"), ELogVerbosity::Warning);
+	LogMessageDelegate.Broadcast(TEXT("Canceled"), ELogVerbosity::Warning);
 	CurrentProcess.Reset();
 }
