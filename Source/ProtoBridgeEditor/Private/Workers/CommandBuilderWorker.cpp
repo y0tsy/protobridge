@@ -1,9 +1,12 @@
 ﻿#include "Workers/CommandBuilderWorker.h"
+#include "ProtoBridgeDefs.h"
+#include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "HAL/PlatformProcess.h"
 
 FString FCommandBuilderWorker::BuildCommand(const FProtoBridgeCommandArgs& Args) const
 {
-	FString Command;
+	FString ArgumentsContent;
 	
 	FString PluginPath = Args.PluginPath;
 	FPaths::NormalizeFilename(PluginPath);
@@ -14,21 +17,32 @@ FString FCommandBuilderWorker::BuildCommand(const FProtoBridgeCommandArgs& Args)
 	FString SourceDir = Args.SourceDirectory;
 	FPaths::NormalizeFilename(SourceDir);
 
-	Command += FString::Printf(TEXT("--plugin=protoc-gen-ue=\"%s\" "), *PluginPath);
-	Command += FString::Printf(TEXT("--ue_out=\"%s\" "), *DestDir);
-	Command += FString::Printf(TEXT("-I=\"%s\" "), *SourceDir);
+	ArgumentsContent += FString::Printf(TEXT("--plugin=protoc-gen-ue=\"%s\"\n"), *PluginPath);
+	ArgumentsContent += FString::Printf(TEXT("--ue_out=\"%s\"\n"), *DestDir);
+	ArgumentsContent += FString::Printf(TEXT("-I=\"%s\"\n"), *SourceDir);
 
 	if (!Args.ApiMacro.IsEmpty())
 	{
-		Command += FString::Printf(TEXT("--ue_opt=dllexport_macro=%s "), *Args.ApiMacro);
+		ArgumentsContent += FString::Printf(TEXT("--ue_opt=dllexport_macro=%s\n"), *Args.ApiMacro);
 	}
 
 	for (const FString& File : Args.ProtoFiles)
 	{
 		FString NormalizedFile = File;
 		FPaths::NormalizeFilename(NormalizedFile);
-		Command += FString::Printf(TEXT("\"%s\" "), *NormalizedFile);
+		ArgumentsContent += FString::Printf(TEXT("\"%s\"\n"), *NormalizedFile);
 	}
 
-	return Command;
+	FString TempDir = FPaths::ProjectSavedDir() / FProtoBridgeDefs::PluginName / TEXT("Temp");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+
+	FString ArgFilePath = TempDir / FString::Printf(TEXT("cmd_%s%s"), *FGuid::NewGuid().ToString(), *FProtoBridgeDefs::ArgFileExtension);
+	FPaths::NormalizeFilename(ArgFilePath);
+
+	if (FFileHelper::SaveStringToFile(ArgumentsContent, *ArgFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	{
+		return FString::Printf(TEXT("@\"%s\""), *ArgFilePath);
+	}
+
+	return FString();
 }
