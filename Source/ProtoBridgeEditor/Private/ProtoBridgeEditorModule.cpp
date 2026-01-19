@@ -21,9 +21,17 @@ void FProtoBridgeEditorModule::StartupModule()
 
 	CompilerService = MakeShared<FProtoBridgeCompilerService>(MakeShared<FProtoBridgeWorkerFactory>());
 	
-	CompilerService->OnCompilationStarted().AddRaw(this, &FProtoBridgeEditorModule::HandleCompilationStarted);
-	CompilerService->OnCompilationFinished().AddRaw(this, &FProtoBridgeEditorModule::HandleCompilationFinished);
-	CompilerService->OnLogMessage().AddRaw(this, &FProtoBridgeEditorModule::HandleLogMessage);
+	CompilerService->OnCompilationStarted().AddLambda([this]() {
+		HandleCompilationStarted();
+	});
+	
+	CompilerService->OnCompilationFinished().AddLambda([this](bool bSuccess, const FString& Message) {
+		HandleCompilationFinished(bSuccess, Message);
+	});
+
+	CompilerService->OnLogMessage().AddLambda([this](const FString& Message, ELogVerbosity::Type Verbosity) {
+		HandleLogMessage(Message, Verbosity);
+	});
 
 	FMessageLogModule& MessageLogModule = FModuleManager::LoadModuleChecked<FMessageLogModule>("MessageLog");
 	FMessageLogInitializationOptions InitOptions;
