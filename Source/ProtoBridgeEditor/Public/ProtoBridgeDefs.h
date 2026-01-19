@@ -13,4 +13,5 @@ struct PROTOBRIDGEEDITOR_API FProtoBridgeDefs
 	static const FString BinFolder;
 	static const FString SourceFolder;
 	static const FString ThirdPartyFolder;
+	static const FString TempFolder;
 };
