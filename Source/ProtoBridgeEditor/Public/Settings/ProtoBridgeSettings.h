@@ -1,0 +1,44 @@
+﻿#pragma once
+
+#include "CoreMinimal.h"
+#include "Engine/DeveloperSettings.h"
+#include "ProtoBridgeSettings.generated.h"
+
+USTRUCT(BlueprintType)
+struct FProtoBridgeMapping
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Config")
+	FDirectoryPath SourcePath;
+
+	UPROPERTY(EditAnywhere, Category = "Config")
+	FDirectoryPath DestinationPath;
+
+	UPROPERTY(EditAnywhere, Category = "Config")
+	bool bRecursive = true;
+
+	UPROPERTY(EditAnywhere, Category = "Config")
+	TArray<FString> Blacklist;
+};
+
+UCLASS(Config = Editor, DefaultConfig, meta = (DisplayName = "ProtoBridge"))
+class PROTOBRIDGEEDITOR_API UProtoBridgeSettings : public UDeveloperSettings
+{
+	GENERATED_BODY()
+
+public:
+	UProtoBridgeSettings();
+
+	UPROPERTY(Config, EditAnywhere, Category = "ProtoBridge | General")
+	TArray<FProtoBridgeMapping> Mappings;
+
+	UPROPERTY(Config, EditAnywhere, Category = "ProtoBridge | Advanced")
+	FFilePath CustomProtocPath;
+
+	UPROPERTY(Config, EditAnywhere, Category = "ProtoBridge | Advanced")
+	FFilePath CustomPluginPath;
+
+	UPROPERTY(Config, EditAnywhere, Category = "ProtoBridge | Generator")
+	FString ApiMacroName;
+};
