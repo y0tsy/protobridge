@@ -12,10 +12,16 @@ struct FProtoBridgeCommandArgs
 	FString ApiMacro;
 };
 
+struct FCommandBuildResult
+{
+	FString Arguments;
+	FString TempArgFilePath;
+};
+
 class PROTOBRIDGEEDITOR_API ICommandBuilderWorker
 {
 public:
 	virtual ~ICommandBuilderWorker() = default;
 
-	virtual FString BuildCommand(const FProtoBridgeCommandArgs& Args) const = 0;
+	virtual FCommandBuildResult BuildCommand(const FProtoBridgeCommandArgs& Args) const = 0;
 };

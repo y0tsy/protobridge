@@ -5,7 +5,7 @@
 #include "Interfaces/Workers/ICommandBuilderWorker.h"
 #include "Settings/ProtoBridgeSettings.h"
 #include "Async/Async.h"
-#include "Misc/ScopeLock.h"
+#include "HAL/FileManager.h"
 
 FProtoBridgeCompilerService::FProtoBridgeCompilerService(TSharedPtr<IProtoBridgeWorkerFactory> InFactory)
 	: WorkerFactory(InFactory)
@@ -34,37 +34,50 @@ void FProtoBridgeCompilerService::CompileAll()
 	LogMessageDelegate.Broadcast(TEXT("Preparing build..."), ELogVerbosity::Log);
 
 	const UProtoBridgeSettings* Settings = GetDefault<UProtoBridgeSettings>();
-	
-	TSharedPtr<IPathResolverWorker> PathResolver = WorkerFactory->CreatePathResolver();
-	TSharedPtr<IFileDiscoveryWorker> FileDiscovery = WorkerFactory->CreateFileDiscovery();
-	TSharedPtr<ICommandBuilderWorker> CommandBuilder = WorkerFactory->CreateCommandBuilder();
-
-	FString ProtocPath = PathResolver->ResolveProtocPath(Settings->CustomProtocPath.FilePath);
-	FString PluginPath = PathResolver->ResolvePluginPath(Settings->CustomPluginPath.FilePath);
-	FString ApiMacro = Settings->ApiMacroName;
-	
 	TArray<FProtoBridgeMapping> MappingsCopy = Settings->Mappings;
+	FString CustomProtoc = Settings->CustomProtocPath.FilePath;
+	FString CustomPlugin = Settings->CustomPluginPath.FilePath;
+	FString ApiMacro = Settings->ApiMacroName;
 
-	Async(EAsyncExecution::TaskGraph, [this, PathResolver, FileDiscovery, CommandBuilder, ProtocPath, PluginPath, ApiMacro, MappingsCopy]()
+	TWeakPtr<FProtoBridgeCompilerService> WeakSelf = AsShared();
+	TSharedPtr<IProtoBridgeWorkerFactory> Factory = WorkerFactory;
+
+	Async(EAsyncExecution::ThreadPool, [WeakSelf, Factory, MappingsCopy, CustomProtoc, CustomPlugin, ApiMacro]()
 	{
+		TSharedPtr<FProtoBridgeCompilerService> Self = WeakSelf.Pin();
+		if (!Self) return;
+
+		TSharedPtr<IPathResolverWorker> PathResolver = Factory->CreatePathResolver();
+		TSharedPtr<IFileDiscoveryWorker> FileDiscovery = Factory->CreateFileDiscovery();
+		TSharedPtr<ICommandBuilderWorker> CommandBuilder = Factory->CreateCommandBuilder();
+
+		FString ProtocPath = PathResolver->ResolveProtocPath(CustomProtoc);
+		FString PluginPath = PathResolver->ResolvePluginPath(CustomPlugin);
+
 		if (!FPaths::FileExists(ProtocPath))
 		{
-			AsyncTask(ENamedThreads::GameThread, [this, ProtocPath]()
+			AsyncTask(ENamedThreads::GameThread, [WeakSelf, ProtocPath]()
 			{
-				LogMessageDelegate.Broadcast(FString::Printf(TEXT("Protoc executable not found at: %s"), *ProtocPath), ELogVerbosity::Error);
-				CompilationFinishedDelegate.Broadcast(false, TEXT("Protoc not found"));
-				bIsActive = false;
+				if (TSharedPtr<FProtoBridgeCompilerService> SharedSelf = WeakSelf.Pin())
+				{
+					SharedSelf->OnLogMessage().Broadcast(FString::Printf(TEXT("Protoc executable not found at: %s"), *ProtocPath), ELogVerbosity::Error);
+					SharedSelf->OnCompilationFinished().Broadcast(false, TEXT("Protoc not found"));
+					SharedSelf->Cancel();
+				}
 			});
 			return;
 		}
 
 		if (!FPaths::FileExists(PluginPath))
 		{
-			AsyncTask(ENamedThreads::GameThread, [this, PluginPath]()
+			AsyncTask(ENamedThreads::GameThread, [WeakSelf, PluginPath]()
 			{
-				LogMessageDelegate.Broadcast(FString::Printf(TEXT("Plugin executable not found at: %s"), *PluginPath), ELogVerbosity::Error);
-				CompilationFinishedDelegate.Broadcast(false, TEXT("Plugin not found"));
-				bIsActive = false;
+				if (TSharedPtr<FProtoBridgeCompilerService> SharedSelf = WeakSelf.Pin())
+				{
+					SharedSelf->OnLogMessage().Broadcast(FString::Printf(TEXT("Plugin executable not found at: %s"), *PluginPath), ELogVerbosity::Error);
+					SharedSelf->OnCompilationFinished().Broadcast(false, TEXT("Plugin not found"));
+					SharedSelf->Cancel();
+				}
 			});
 			return;
 		}
@@ -90,29 +103,34 @@ void FProtoBridgeCompilerService::CompileAll()
 			Args.ProtoFiles = ProtoFiles;
 			Args.ApiMacro = ApiMacro;
 
-			FCompilationTask Task;
-			Task.ProtocPath = ProtocPath;
-			Task.Arguments = CommandBuilder->BuildCommand(Args);
-			Task.SourceDir = SourceDir;
-
-			if (!Task.Arguments.IsEmpty())
+			FCommandBuildResult BuildResult = CommandBuilder->BuildCommand(Args);
+			
+			if (!BuildResult.Arguments.IsEmpty())
 			{
+				FCompilationTask Task;
+				Task.ProtocPath = ProtocPath;
+				Task.Arguments = BuildResult.Arguments;
+				Task.TempArgFilePath = BuildResult.TempArgFilePath;
+				Task.SourceDir = SourceDir;
 				GeneratedTasks.Add(Task);
 			}
 		}
 
-		AsyncTask(ENamedThreads::GameThread, [this, GeneratedTasks]()
+		AsyncTask(ENamedThreads::GameThread, [WeakSelf, GeneratedTasks]()
 		{
-			if (GeneratedTasks.Num() == 0)
+			if (TSharedPtr<FProtoBridgeCompilerService> SharedSelf = WeakSelf.Pin())
 			{
-				LogMessageDelegate.Broadcast(TEXT("No files to compile."), ELogVerbosity::Warning);
-				CompilationFinishedDelegate.Broadcast(true, TEXT("Nothing to compile"));
-				bIsActive = false;
-			}
-			else
-			{
-				TaskQueue = GeneratedTasks;
-				StartNextTask();
+				if (GeneratedTasks.Num() == 0)
+				{
+					SharedSelf->OnLogMessage().Broadcast(TEXT("No files to compile."), ELogVerbosity::Warning);
+					SharedSelf->OnCompilationFinished().Broadcast(true, TEXT("Nothing to compile"));
+					SharedSelf->Cancel();
+				}
+				else
+				{
+					SharedSelf->TaskQueue = GeneratedTasks;
+					SharedSelf->StartNextTask();
+				}
 			}
 		});
 	});
@@ -131,6 +149,8 @@ void FProtoBridgeCompilerService::Cancel()
 		CurrentProcess->Cancel(true);
 		CurrentProcess.Reset();
 	}
+	
+	CleanUpTask(CurrentTask);
 }
 
 bool FProtoBridgeCompilerService::IsCompiling() const
@@ -149,9 +169,9 @@ void FProtoBridgeCompilerService::StartNextTask()
 		return;
 	}
 
-	FCompilationTask Task = TaskQueue[0];
+	CurrentTask = TaskQueue[0];
 	TaskQueue.RemoveAt(0);
-	ProcessTask(Task);
+	ProcessTask(CurrentTask);
 }
 
 void FProtoBridgeCompilerService::ProcessTask(const FCompilationTask& Task)
@@ -168,7 +188,23 @@ void FProtoBridgeCompilerService::ProcessTask(const FCompilationTask& Task)
 	{
 		LogMessageDelegate.Broadcast(TEXT("Failed to launch protoc"), ELogVerbosity::Error);
 		bHasErrors = true;
-		StartNextTask(); 
+		CleanUpTask(Task);
+		
+		AsyncTask(ENamedThreads::GameThread, [WeakSelf = AsShared()]()
+		{
+			if (TSharedPtr<FProtoBridgeCompilerService> Self = WeakSelf.Pin())
+			{
+				Self->StartNextTask();
+			}
+		});
+	}
+}
+
+void FProtoBridgeCompilerService::CleanUpTask(const FCompilationTask& Task)
+{
+	if (!Task.TempArgFilePath.IsEmpty() && IFileManager::Get().FileExists(*Task.TempArgFilePath))
+	{
+		IFileManager::Get().Delete(*Task.TempArgFilePath);
 	}
 }
 
@@ -194,6 +230,8 @@ void FProtoBridgeCompilerService::HandleProcessOutput(FString Output)
 
 void FProtoBridgeCompilerService::HandleProcessCompleted(int32 ReturnCode)
 {
+	CleanUpTask(CurrentTask);
+
 	if (!bIsActive) return;
 
 	if (ReturnCode != 0)
@@ -208,6 +246,7 @@ void FProtoBridgeCompilerService::HandleProcessCompleted(int32 ReturnCode)
 
 void FProtoBridgeCompilerService::HandleProcessCanceled()
 {
+	CleanUpTask(CurrentTask);
 	LogMessageDelegate.Broadcast(TEXT("Canceled"), ELogVerbosity::Warning);
 	CurrentProcess.Reset();
 }

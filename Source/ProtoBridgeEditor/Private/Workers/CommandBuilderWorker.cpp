@@ -2,10 +2,11 @@
 #include "ProtoBridgeDefs.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
-#include "HAL/PlatformProcess.h"
+#include "HAL/FileManager.h"
 
-FString FCommandBuilderWorker::BuildCommand(const FProtoBridgeCommandArgs& Args) const
+FCommandBuildResult FCommandBuilderWorker::BuildCommand(const FProtoBridgeCommandArgs& Args) const
 {
+	FCommandBuildResult Result;
 	FString ArgumentsContent;
 	
 	FString PluginPath = Args.PluginPath;
@@ -33,7 +34,7 @@ FString FCommandBuilderWorker::BuildCommand(const FProtoBridgeCommandArgs& Args)
 		ArgumentsContent += FString::Printf(TEXT("\"%s\"\n"), *NormalizedFile);
 	}
 
-	FString TempDir = FPaths::ProjectSavedDir() / FProtoBridgeDefs::PluginName / TEXT("Temp");
+	FString TempDir = FPaths::ProjectSavedDir() / FProtoBridgeDefs::PluginName / FProtoBridgeDefs::TempFolder;
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 
 	FString ArgFilePath = TempDir / FString::Printf(TEXT("cmd_%s%s"), *FGuid::NewGuid().ToString(), *FProtoBridgeDefs::ArgFileExtension);
@@ -41,8 +42,9 @@ FString FCommandBuilderWorker::BuildCommand(const FProtoBridgeCommandArgs& Args)
 
 	if (FFileHelper::SaveStringToFile(ArgumentsContent, *ArgFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 	{
-		return FString::Printf(TEXT("@\"%s\""), *ArgFilePath);
+		Result.TempArgFilePath = ArgFilePath;
+		Result.Arguments = FString::Printf(TEXT("@\"%s\""), *ArgFilePath);
 	}
 
-	return FString();
+	return Result;
 }

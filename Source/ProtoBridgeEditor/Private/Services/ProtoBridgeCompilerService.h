@@ -11,6 +11,7 @@ struct FCompilationTask
 {
 	FString ProtocPath;
 	FString Arguments;
+	FString TempArgFilePath;
 	FString SourceDir;
 };
 
@@ -31,6 +32,7 @@ public:
 private:
 	void StartNextTask();
 	void ProcessTask(const FCompilationTask& Task);
+	void CleanUpTask(const FCompilationTask& Task);
 	
 	void HandleProcessOutput(FString Output);
 	void HandleProcessCompleted(int32 ReturnCode);
@@ -39,6 +41,7 @@ private:
 	TSharedPtr<IProtoBridgeWorkerFactory> WorkerFactory;
 	TSharedPtr<FMonitoredProcess> CurrentProcess;
 	TArray<FCompilationTask> TaskQueue;
+	FCompilationTask CurrentTask;
 	
 	FOnProtoBridgeCompilationStarted CompilationStartedDelegate;
 	FOnProtoBridgeCompilationFinished CompilationFinishedDelegate;
