@@ -6,5 +6,5 @@
 class FCommandBuilderWorker : public ICommandBuilderWorker
 {
 public:
-	virtual FString BuildCommand(const FProtoBridgeCommandArgs& Args) const override;
+	virtual FCommandBuildResult BuildCommand(const FProtoBridgeCommandArgs& Args) const override;
 };

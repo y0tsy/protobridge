@@ -190,7 +190,7 @@ void FProtoBridgeCompilerService::ProcessTask(const FCompilationTask& Task)
 		bHasErrors = true;
 		CleanUpTask(Task);
 		
-		AsyncTask(ENamedThreads::GameThread, [WeakSelf = AsShared()]()
+		AsyncTask(ENamedThreads::GameThread, [WeakSelf = TWeakPtr<FProtoBridgeCompilerService>(AsShared())]()
 		{
 			if (TSharedPtr<FProtoBridgeCompilerService> Self = WeakSelf.Pin())
 			{
