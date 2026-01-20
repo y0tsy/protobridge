@@ -7,7 +7,7 @@
 FCommandBuildResult FCommandBuilderWorker::BuildCommand(const FProtoBridgeCommandArgs& Args) const
 {
 	FCommandBuildResult Result;
-	FString ArgumentsContent;
+	TStringBuilder<4096> Builder;
 	
 	FString PluginPath = Args.PluginPath;
 	FPaths::NormalizeFilename(PluginPath);
@@ -18,20 +18,20 @@ FCommandBuildResult FCommandBuilderWorker::BuildCommand(const FProtoBridgeComman
 	FString SourceDir = Args.SourceDirectory;
 	FPaths::NormalizeFilename(SourceDir);
 
-	ArgumentsContent += FString::Printf(TEXT("--plugin=protoc-gen-ue=\"%s\"\n"), *PluginPath);
-	ArgumentsContent += FString::Printf(TEXT("--ue_out=\"%s\"\n"), *DestDir);
-	ArgumentsContent += FString::Printf(TEXT("-I=\"%s\"\n"), *SourceDir);
+	Builder.Appendf(TEXT("--plugin=protoc-gen-ue=\"%s\"\n"), *PluginPath);
+	Builder.Appendf(TEXT("--ue_out=\"%s\"\n"), *DestDir);
+	Builder.Appendf(TEXT("-I=\"%s\"\n"), *SourceDir);
 
 	if (!Args.ApiMacro.IsEmpty())
 	{
-		ArgumentsContent += FString::Printf(TEXT("--ue_opt=dllexport_macro=%s\n"), *Args.ApiMacro);
+		Builder.Appendf(TEXT("--ue_opt=dllexport_macro=%s\n"), *Args.ApiMacro);
 	}
 
 	for (const FString& File : Args.ProtoFiles)
 	{
 		FString NormalizedFile = File;
 		FPaths::NormalizeFilename(NormalizedFile);
-		ArgumentsContent += FString::Printf(TEXT("\"%s\"\n"), *NormalizedFile);
+		Builder.Appendf(TEXT("\"%s\"\n"), *NormalizedFile);
 	}
 
 	FString TempDir = FPaths::ProjectSavedDir() / FProtoBridgeDefs::PluginName / FProtoBridgeDefs::TempFolder;
@@ -40,7 +40,7 @@ FCommandBuildResult FCommandBuilderWorker::BuildCommand(const FProtoBridgeComman
 	FString ArgFilePath = TempDir / FString::Printf(TEXT("cmd_%s%s"), *FGuid::NewGuid().ToString(), *FProtoBridgeDefs::ArgFileExtension);
 	FPaths::NormalizeFilename(ArgFilePath);
 
-	if (FFileHelper::SaveStringToFile(ArgumentsContent, *ArgFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	if (FFileHelper::SaveStringToFile(Builder.ToString(), *ArgFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 	{
 		Result.TempArgFilePath = ArgFilePath;
 		Result.Arguments = FString::Printf(TEXT("@\"%s\""), *ArgFilePath);
