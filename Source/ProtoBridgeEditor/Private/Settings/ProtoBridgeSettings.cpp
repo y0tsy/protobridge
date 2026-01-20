@@ -1,6 +1,6 @@
 ﻿#include "Settings/ProtoBridgeSettings.h"
 #include "Misc/Paths.h"
-#include "HAL/FileManager.h"
+#include "Internationalization/Regex.h"
 
 UProtoBridgeSettings::UProtoBridgeSettings()
 {
@@ -17,19 +17,16 @@ void UProtoBridgeSettings::PostEditChangeProperty(FPropertyChangedEvent& Propert
 	{
 		FName PropertyName = PropertyChangedEvent.Property->GetFName();
 		
-		if (PropertyName == GET_MEMBER_NAME_CHECKED(UProtoBridgeSettings, CustomProtocPath))
+		if (PropertyName == GET_MEMBER_NAME_CHECKED(UProtoBridgeSettings, ApiMacroName))
 		{
-			if (!CustomProtocPath.FilePath.IsEmpty() && !FPaths::FileExists(CustomProtocPath.FilePath))
+			if (!ApiMacroName.IsEmpty())
 			{
-				CustomProtocPath.FilePath.Empty();
-			}
-		}
-
-		if (PropertyName == GET_MEMBER_NAME_CHECKED(UProtoBridgeSettings, CustomPluginPath))
-		{
-			if (!CustomPluginPath.FilePath.IsEmpty() && !FPaths::FileExists(CustomPluginPath.FilePath))
-			{
-				CustomPluginPath.FilePath.Empty();
+				FRegexPattern ValidMacroPattern(TEXT("^[a-zA-Z0-9_]+$"));
+				FRegexMatcher Matcher(ValidMacroPattern, ApiMacroName);
+				if (!Matcher.FindNext())
+				{
+					ApiMacroName.Empty();
+				}
 			}
 		}
 	}
