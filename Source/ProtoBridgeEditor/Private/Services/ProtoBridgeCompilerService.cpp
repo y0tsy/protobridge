@@ -62,7 +62,6 @@ void FProtoBridgeCompilerService::CompileAll()
 		LogMessageDelegate.Broadcast(TEXT("Preparing build..."), ELogVerbosity::Log);
 	});
 
-	// Explicitly create WeakPtr for capture
 	TWeakPtr<FProtoBridgeCompilerService> WeakSelf = AsShared();
 	TSharedPtr<IProtoBridgeWorkerFactory> Factory = WorkerFactory;
 
@@ -81,20 +80,8 @@ void FProtoBridgeCompilerService::ExecuteCompilation(TSharedPtr<IProtoBridgeWork
 	TSharedPtr<IFileDiscoveryWorker> FileDiscovery = Factory->CreateFileDiscovery();
 	TSharedPtr<ICommandBuilderWorker> CommandBuilder = Factory->CreateCommandBuilder();
 
-	FString ResolvedProtoc = Context.ProtocPath;
-	FString ResolvedPlugin = Context.PluginPath;
-
-	if (ResolvedProtoc.IsEmpty() || !FPaths::FileExists(ResolvedProtoc))
-	{
-		FString DefaultProtoc = FPaths::Combine(Context.PluginDirectory, FProtoBridgeDefs::SourceFolder, FProtoBridgeDefs::ThirdPartyFolder, FProtoBridgeDefs::BinFolder, TEXT("Win64"), FProtoBridgeDefs::ProtocExecutable + TEXT(".exe")); 
-		ResolvedProtoc = FPaths::ConvertRelativePathToFull(DefaultProtoc);
-	}
-
-	if (ResolvedPlugin.IsEmpty() || !FPaths::FileExists(ResolvedPlugin))
-	{
-		FString DefaultPlugin = FPaths::Combine(Context.PluginDirectory, FProtoBridgeDefs::SourceFolder, FProtoBridgeDefs::ThirdPartyFolder, FProtoBridgeDefs::BinFolder, TEXT("Win64"), FProtoBridgeDefs::PluginExecutable + TEXT(".exe"));
-		ResolvedPlugin = FPaths::ConvertRelativePathToFull(DefaultPlugin);
-	}
+	FString ResolvedProtoc = PathResolver->ResolveProtocPath();
+	FString ResolvedPlugin = PathResolver->ResolvePluginPath();
 
 	if (!FPaths::FileExists(ResolvedProtoc))
 	{
@@ -230,7 +217,10 @@ void FProtoBridgeCompilerService::StartNextTask()
 
 	{
 		FScopeLock Lock(&StateMutex);
-		if (!bIsActive) return;
+		if (!bIsActive) 
+		{
+			return;
+		}
 
 		if (TaskQueue.Num() > 0)
 		{
@@ -308,6 +298,7 @@ void FProtoBridgeCompilerService::HandleExecutorCompleted(int32 ReturnCode)
 			{
 				FScopeLock Lock(&Self->StateMutex);
 				Self->CurrentExecutor.Reset();
+				
 				if (!Self->bIsActive) return;
 			}
 
@@ -325,6 +316,8 @@ void FProtoBridgeCompilerService::HandleExecutorCompleted(int32 ReturnCode)
 void FProtoBridgeCompilerService::FinalizeCompilation()
 {
 	FScopeLock Lock(&StateMutex);
+	if (!bIsActive) return;
+
 	bIsActive = false;
 	
 	bool bSuccess = !bHasErrors;
