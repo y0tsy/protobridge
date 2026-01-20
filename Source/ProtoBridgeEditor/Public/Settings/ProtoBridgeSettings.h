@@ -41,8 +41,5 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, Category = "ProtoBridge | Generator")
 	FString ApiMacroName;
-
-#if WITH_EDITOR
-	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-#endif
+	
 };
