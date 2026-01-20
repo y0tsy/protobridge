@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "ProtoBridgeTypes.h"
 #include "Misc/MonitoredProcess.h"
-#include "Containers/Ticker.h"
+#include "HAL/Event.h"
 
 class FTaskExecutor : public TSharedFromThis<FTaskExecutor>
 {
@@ -13,30 +13,28 @@ public:
 
 	void Execute(const TArray<FCompilationTask>& Tasks);
 	void Cancel();
+	
 	bool IsRunning() const;
 
 	FOnExecutorOutput& OnOutput() { return OutputDelegate; }
 	FOnExecutorFinished& OnFinished() { return FinishedDelegate; }
 
 private:
-	void StartNextTask();
-	void HandleOutput(FString Output);
-	void HandleCompleted(int32 ReturnCode);
+	void HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> ProcWeak);
+	void HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess> ProcWeak);
 	void CleanupTask(const FCompilationTask& Task);
-	bool CheckTimeout(float DeltaTime);
 
 	mutable FCriticalSection StateMutex;
-	TArray<FCompilationTask> Queue;
 	FCompilationTask CurrentTask;
 	TSharedPtr<FMonitoredProcess> CurrentProcess;
 	
+	FEvent* TaskFinishedEvent;
+
 	FOnExecutorOutput OutputDelegate;
 	FOnExecutorFinished FinishedDelegate;
 	
-	FTSTicker::FDelegateHandle TimeoutTickerHandle;
-	double CurrentTaskStartTime;
-
 	bool bIsRunning;
 	bool bIsCancelled;
 	bool bHasErrors;
+	int32 LastReturnCode;
 };

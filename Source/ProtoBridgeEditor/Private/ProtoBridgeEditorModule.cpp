@@ -42,6 +42,7 @@ void FProtoBridgeEditorModule::ShutdownModule()
 	if (CompilerService.IsValid())
 	{
 		CompilerService->Cancel();
+		CompilerService->WaitForCompletion();
 		CompilerService.Reset();
 	}
 }

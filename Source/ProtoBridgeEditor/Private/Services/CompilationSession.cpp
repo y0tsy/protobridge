@@ -3,15 +3,23 @@
 #include "Services/CompilationPlanner.h"
 #include "Misc/ScopeLock.h"
 #include "Async/Async.h"
+#include "HAL/PlatformProcess.h"
 
 FCompilationSession::FCompilationSession()
 	: bIsActive(false)
+	, WorkFinishedEvent(nullptr)
 {
+	WorkFinishedEvent = FPlatformProcess::GetSynchEventFromPool(true);
 }
 
 FCompilationSession::~FCompilationSession()
 {
 	Cancel();
+	if (WorkFinishedEvent)
+	{
+		FPlatformProcess::ReturnSynchEventToPool(WorkFinishedEvent);
+		WorkFinishedEvent = nullptr;
+	}
 }
 
 void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
@@ -19,11 +27,17 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 	FScopeLock Lock(&SessionMutex);
 	if (bIsActive) return;
 	bIsActive = true;
+	
+	if (WorkFinishedEvent)
+	{
+		WorkFinishedEvent->Reset();
+	}
 
 	StartedDelegate.Broadcast();
 
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
-	Async(EAsyncExecution::ThreadPool, [WeakSelf, Config]()
+	
+	Async(EAsyncExecution::Thread, [WeakSelf, Config]()
 	{
 		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
 		{
@@ -47,6 +61,23 @@ void FCompilationSession::Cancel()
 	}
 }
 
+void FCompilationSession::WaitForCompletion()
+{
+	if (WorkFinishedEvent)
+	{
+		bool bShouldWait = false;
+		{
+			FScopeLock Lock(&SessionMutex);
+			bShouldWait = bIsActive;
+		}
+
+		if (bShouldWait)
+		{
+			WorkFinishedEvent->Wait();
+		}
+	}
+}
+
 bool FCompilationSession::IsRunning() const
 {
 	FScopeLock Lock(&SessionMutex);
@@ -61,13 +92,13 @@ void FCompilationSession::RunInternal(const FProtoBridgeConfiguration& Config)
 
 	if (!Plan.bIsValid)
 	{
-		DispatchFinished(false, Plan.ErrorMessage);
+		OnExecutorFinishedInternal(false, Plan.ErrorMessage);
 		return;
 	}
 
 	if (Plan.Tasks.Num() == 0)
 	{
-		DispatchFinished(true, TEXT("No files to compile"));
+		OnExecutorFinishedInternal(true, TEXT("No files to compile"));
 		return;
 	}
 
@@ -80,11 +111,27 @@ void FCompilationSession::RunInternal(const FProtoBridgeConfiguration& Config)
 			Executor = MakeShared<FTaskExecutor>();
 			
 			Executor->OnOutput().AddSP(this, &FCompilationSession::DispatchLog);
-			Executor->OnFinished().AddSP(this, &FCompilationSession::DispatchFinished);
+			Executor->OnFinished().AddSP(this, &FCompilationSession::OnExecutorFinishedInternal);
 			
 			Executor->Execute(Plan.Tasks);
 		}
 	}
+}
+
+void FCompilationSession::OnExecutorFinishedInternal(bool bSuccess, const FString& Message)
+{
+	{
+		FScopeLock Lock(&SessionMutex);
+		bIsActive = false;
+		Executor.Reset();
+	}
+
+	if (WorkFinishedEvent)
+	{
+		WorkFinishedEvent->Trigger();
+	}
+
+	DispatchFinished(bSuccess, Message);
 }
 
 void FCompilationSession::DispatchLog(const FString& Message)
@@ -106,11 +153,6 @@ void FCompilationSession::DispatchFinished(bool bSuccess, const FString& Message
 	{
 		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
 		{
-			{
-				FScopeLock Lock(&Self->SessionMutex);
-				Self->bIsActive = false;
-				Self->Executor.Reset();
-			}
 			Self->FinishedDelegate.Broadcast(bSuccess, Message);
 		}
 	});

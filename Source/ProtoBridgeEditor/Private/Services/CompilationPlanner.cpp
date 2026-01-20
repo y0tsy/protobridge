@@ -1,5 +1,6 @@
 ﻿#include "Services/CompilationPlanner.h"
 #include "Services/ProtoBridgeUtils.h"
+#include "Services/CommandBuilder.h"
 
 FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfiguration& Config)
 {
@@ -48,7 +49,7 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 		if (Files.Num() > 0)
 		{
 			FString Args, TempArgFilePath;
-			if (FProtoBridgeUtils::BuildCommandArguments(Config, Source, Dest, Files, Args, TempArgFilePath))
+			if (FCommandBuilder::Build(Config, Source, Dest, Files, Args, TempArgFilePath))
 			{
 				FCompilationTask Task;
 				Task.ProtocPath = Protoc;
@@ -61,7 +62,7 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 			else
 			{
 				Plan.bIsValid = false;
-				Plan.ErrorMessage = TEXT("Failed to build arguments (possible path injection)");
+				Plan.ErrorMessage = TEXT("Failed to build arguments (unsafe characters detected)");
 				return Plan;
 			}
 		}

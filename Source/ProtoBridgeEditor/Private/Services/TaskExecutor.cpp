@@ -2,48 +2,149 @@
 #include "HAL/FileManager.h"
 #include "Misc/ScopeLock.h"
 #include "ProtoBridgeDefs.h"
-#include "HAL/PlatformTime.h"
+#include "HAL/PlatformProcess.h"
 
 FTaskExecutor::FTaskExecutor()
-	: CurrentTaskStartTime(0.0)
+	: TaskFinishedEvent(nullptr)
 	, bIsRunning(false)
 	, bIsCancelled(false)
 	, bHasErrors(false)
+	, LastReturnCode(0)
 {
+	TaskFinishedEvent = FPlatformProcess::GetSynchEventFromPool(true);
 }
 
 FTaskExecutor::~FTaskExecutor()
 {
 	Cancel();
+	if (TaskFinishedEvent)
+	{
+		FPlatformProcess::ReturnSynchEventToPool(TaskFinishedEvent);
+		TaskFinishedEvent = nullptr;
+	}
 }
 
 void FTaskExecutor::Execute(const TArray<FCompilationTask>& Tasks)
 {
-	FScopeLock Lock(&StateMutex);
-	if (bIsRunning) return;
+	{
+		FScopeLock Lock(&StateMutex);
+		if (bIsRunning) return;
+		bIsRunning = true;
+		bIsCancelled = false;
+		bHasErrors = false;
+	}
 
-	bIsRunning = true;
-	bIsCancelled = false;
-	bHasErrors = false;
-	Queue = Tasks;
+	for (const FCompilationTask& Task : Tasks)
+	{
+		{
+			FScopeLock Lock(&StateMutex);
+			if (bIsCancelled) break;
+			
+			CurrentTask = Task;
+			if (TaskFinishedEvent)
+			{
+				TaskFinishedEvent->Reset();
+			}
+			LastReturnCode = -1;
+		}
 
-	StartNextTask();
+		OutputDelegate.Broadcast(FString::Printf(TEXT("Compiling: %s"), *Task.SourceDir));
+
+		TSharedPtr<FMonitoredProcess> Process = MakeShared<FMonitoredProcess>(Task.ProtocPath, Task.Arguments, true);
+		
+		TWeakPtr<FMonitoredProcess> WeakProc = Process;
+		Process->OnOutput().BindSP(this, &FTaskExecutor::HandleOutput, WeakProc);
+		Process->OnCompleted().BindSP(this, &FTaskExecutor::HandleCompleted, WeakProc);
+
+		{
+			FScopeLock Lock(&StateMutex);
+			CurrentProcess = Process;
+		}
+
+		if (Process->Launch())
+		{
+			bool bSignaled = false;
+			if (TaskFinishedEvent)
+			{
+				bSignaled = TaskFinishedEvent->Wait(FTimespan::FromSeconds(FProtoBridgeDefs::ExecutionTimeoutSeconds));
+			}
+			
+			if (!bSignaled)
+			{
+				OutputDelegate.Broadcast(TEXT("Error: Compilation timed out. Terminating process."));
+				bHasErrors = true;
+				
+				Process->Cancel(true);
+			}
+			else
+			{
+				FScopeLock Lock(&StateMutex);
+				if (bIsCancelled)
+				{
+					break;
+				}
+				
+				if (LastReturnCode != 0)
+				{
+					bHasErrors = true;
+				}
+			}
+		}
+		else
+		{
+			OutputDelegate.Broadcast(TEXT("Critical Error: Failed to launch protoc process. Aborting queue."));
+			bHasErrors = true;
+			
+			CleanupTask(Task);
+			{
+				FScopeLock Lock(&StateMutex);
+				CurrentProcess.Reset();
+				bIsRunning = false;
+			}
+			FinishedDelegate.Broadcast(false, TEXT("Failed to launch compiler process"));
+			return; 
+		}
+
+		{
+			FScopeLock Lock(&StateMutex);
+			CurrentProcess.Reset();
+		}
+		CleanupTask(Task);
+	}
+
+	bool bWasCancelled = false;
+	{
+		FScopeLock Lock(&StateMutex);
+		bIsRunning = false;
+		bWasCancelled = bIsCancelled;
+	}
+
+	if (bWasCancelled)
+	{
+		FinishedDelegate.Broadcast(false, TEXT("Operation canceled"));
+	}
+	else
+	{
+		FString Msg = bHasErrors ? TEXT("Finished with errors") : TEXT("Success");
+		FinishedDelegate.Broadcast(!bHasErrors, Msg);
+	}
 }
 
 void FTaskExecutor::Cancel()
 {
 	TSharedPtr<FMonitoredProcess> ProcToCancel;
+	
 	{
 		FScopeLock Lock(&StateMutex);
-		bIsCancelled = true;
-		Queue.Empty();
-		ProcToCancel = CurrentProcess;
+		if (!bIsRunning) return;
 		
-		if (TimeoutTickerHandle.IsValid())
-		{
-			FTSTicker::GetCoreTicker().RemoveTicker(TimeoutTickerHandle);
-			TimeoutTickerHandle.Reset();
-		}
+		bIsCancelled = true;
+		ProcToCancel = CurrentProcess;
+	}
+
+	if (TaskFinishedEvent)
+	{
+		TaskFinishedEvent->Trigger();
 	}
 
 	if (ProcToCancel.IsValid())
@@ -58,156 +159,41 @@ bool FTaskExecutor::IsRunning() const
 	return bIsRunning;
 }
 
-void FTaskExecutor::StartNextTask()
+void FTaskExecutor::HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> ProcWeak)
 {
-	while (true)
+	TSharedPtr<FMonitoredProcess> Proc = ProcWeak.Pin();
 	{
-		FCompilationTask TaskToRun;
-		TSharedPtr<FMonitoredProcess> NewProcess;
-		bool bLaunchSuccess = false;
-		bool bShouldFinish = false;
-		bool bWasCancelled = false;
-
+		FScopeLock Lock(&StateMutex);
+		if (!Proc.IsValid() || Proc != CurrentProcess)
 		{
-			FScopeLock Lock(&StateMutex);
-			
-			if (TimeoutTickerHandle.IsValid())
-			{
-				FTSTicker::GetCoreTicker().RemoveTicker(TimeoutTickerHandle);
-				TimeoutTickerHandle.Reset();
-			}
-
-			if (bIsCancelled)
-			{
-				bIsRunning = false;
-				bWasCancelled = true;
-			}
-			else if (Queue.Num() == 0)
-			{
-				bIsRunning = false;
-				bShouldFinish = true;
-			}
-			else
-			{
-				TaskToRun = Queue[0];
-				Queue.RemoveAt(0);
-				CurrentTask = TaskToRun;
-
-				NewProcess = MakeShared<FMonitoredProcess>(TaskToRun.ProtocPath, TaskToRun.Arguments, true);
-				NewProcess->OnOutput().BindSP(this, &FTaskExecutor::HandleOutput);
-				NewProcess->OnCompleted().BindSP(this, &FTaskExecutor::HandleCompleted);
-				
-				CurrentProcess = NewProcess;
-				CurrentTaskStartTime = FPlatformTime::Seconds();
-
-				if (NewProcess->Launch())
-				{
-					bLaunchSuccess = true;
-					
-					TimeoutTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
-						FTickerDelegate::CreateSP(this, &FTaskExecutor::CheckTimeout), 
-						1.0f 
-					);
-				}
-				else
-				{
-					bHasErrors = true;
-					CurrentProcess.Reset();
-				}
-			}
-		}
-
-		if (bWasCancelled)
-		{
-			FinishedDelegate.Broadcast(false, TEXT("Operation canceled"));
 			return;
 		}
-
-		if (bShouldFinish)
-		{
-			FString Msg = bHasErrors ? TEXT("Finished with errors") : TEXT("Success");
-			FinishedDelegate.Broadcast(!bHasErrors, Msg);
-			return;
-		}
-
-		OutputDelegate.Broadcast(FString::Printf(TEXT("Compiling: %s"), *TaskToRun.SourceDir));
-
-		if (bLaunchSuccess)
-		{
-			return; 
-		}
-		else
-		{
-			OutputDelegate.Broadcast(TEXT("Error: Failed to launch protoc process. Continuing..."));
-			CleanupTask(TaskToRun);
-			continue;
-		}
 	}
-}
-
-bool FTaskExecutor::CheckTimeout(float DeltaTime)
-{
-	FScopeLock Lock(&StateMutex);
-	
-	if (CurrentProcess.IsValid() && bIsRunning && !bIsCancelled)
-	{
-		double Duration = FPlatformTime::Seconds() - CurrentTaskStartTime;
-		if (Duration > FProtoBridgeDefs::ExecutionTimeoutSeconds)
-		{
-			OutputDelegate.Broadcast(TEXT("Error: Compilation timed out. Terminating process."));
-			bHasErrors = true;
-			
-			TSharedPtr<FMonitoredProcess> ProcToKill = CurrentProcess;
-			if (ProcToKill.IsValid())
-			{
-				ProcToKill->Cancel(true);
-			}
-			return false; 
-		}
-	}
-	else
-	{
-		return false; 
-	}
-
-	return true; 
-}
-
-void FTaskExecutor::HandleOutput(FString Output)
-{
 	OutputDelegate.Broadcast(Output);
 }
 
-void FTaskExecutor::HandleCompleted(int32 ReturnCode)
+void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess> ProcWeak)
 {
-	bool bSuccess = (ReturnCode == 0);
-	
-	FCompilationTask FinishedTask;
+	TSharedPtr<FMonitoredProcess> Proc = ProcWeak.Pin();
 	{
 		FScopeLock Lock(&StateMutex);
-		
-		if (TimeoutTickerHandle.IsValid())
+		if (!Proc.IsValid() || Proc != CurrentProcess)
 		{
-			FTSTicker::GetCoreTicker().RemoveTicker(TimeoutTickerHandle);
-			TimeoutTickerHandle.Reset();
+			return;
 		}
 
-		FinishedTask = CurrentTask;
-		CurrentProcess.Reset();
-		if (!bSuccess)
+		LastReturnCode = ReturnCode;
+		
+		if (TaskFinishedEvent)
 		{
-			bHasErrors = true;
+			TaskFinishedEvent->Trigger();
 		}
 	}
 
-	CleanupTask(FinishedTask);
-
-	if (!bSuccess)
+	if (ReturnCode != 0)
 	{
 		OutputDelegate.Broadcast(FString::Printf(TEXT("Process exited with code %d"), ReturnCode));
 	}
-
-	StartNextTask();
 }
 
 void FTaskExecutor::CleanupTask(const FCompilationTask& Task)

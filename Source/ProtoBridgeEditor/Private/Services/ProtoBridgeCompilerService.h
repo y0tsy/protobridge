@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Interfaces/IProtoBridgeService.h"
-#include "Async/Async.h"
+#include "Containers/Ticker.h"
 
 class FCompilationSession;
 
@@ -14,6 +14,7 @@ public:
 
 	virtual void Compile(const FProtoBridgeConfiguration& Config) override;
 	virtual void Cancel() override;
+	virtual void WaitForCompletion() override;
 	virtual bool IsCompiling() const override;
 
 	virtual FOnProtoBridgeCompilationStarted& OnCompilationStarted() override { return CompilationStartedDelegate; }

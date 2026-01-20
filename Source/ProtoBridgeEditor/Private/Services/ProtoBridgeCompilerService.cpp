@@ -11,6 +11,7 @@ FProtoBridgeCompilerService::FProtoBridgeCompilerService()
 FProtoBridgeCompilerService::~FProtoBridgeCompilerService()
 {
 	Cancel();
+	WaitForCompletion();
 	if (LogTickerHandle.IsValid())
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(LogTickerHandle);
@@ -20,6 +21,7 @@ FProtoBridgeCompilerService::~FProtoBridgeCompilerService()
 void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Config)
 {
 	Cancel();
+	WaitForCompletion();
 
 	CurrentSession = MakeShared<FCompilationSession>();
 	CurrentSession->OnStarted().AddSP(this, &FProtoBridgeCompilerService::OnSessionStarted);
@@ -34,6 +36,14 @@ void FProtoBridgeCompilerService::Cancel()
 	if (CurrentSession.IsValid())
 	{
 		CurrentSession->Cancel();
+	}
+}
+
+void FProtoBridgeCompilerService::WaitForCompletion()
+{
+	if (CurrentSession.IsValid())
+	{
+		CurrentSession->WaitForCompletion();
 		CurrentSession.Reset();
 	}
 }
@@ -77,7 +87,6 @@ void FProtoBridgeCompilerService::OnSessionFinished(bool bSuccess, const FString
 	}
 
 	CompilationFinishedDelegate.Broadcast(bSuccess, Msg);
-	CurrentSession.Reset();
 }
 
 void FProtoBridgeCompilerService::ProcessLogQueue()

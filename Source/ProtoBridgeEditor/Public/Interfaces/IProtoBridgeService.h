@@ -14,6 +14,7 @@ public:
 
 	virtual void Compile(const FProtoBridgeConfiguration& Config) = 0;
 	virtual void Cancel() = 0;
+	virtual void WaitForCompletion() = 0;
 	virtual bool IsCompiling() const = 0;
 
 	virtual FOnProtoBridgeCompilationStarted& OnCompilationStarted() = 0;

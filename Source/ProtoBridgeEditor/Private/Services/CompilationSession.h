@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ProtoBridgeTypes.h"
+#include "HAL/Event.h"
 
 class FTaskExecutor;
 
@@ -13,6 +14,7 @@ public:
 
 	void Start(const FProtoBridgeConfiguration& Config);
 	void Cancel();
+	void WaitForCompletion();
 	bool IsRunning() const;
 
 	FSimpleMulticastDelegate& OnStarted() { return StartedDelegate; }
@@ -23,10 +25,13 @@ private:
 	void RunInternal(const FProtoBridgeConfiguration& Config);
 	void DispatchLog(const FString& Message);
 	void DispatchFinished(bool bSuccess, const FString& Message);
+	void OnExecutorFinishedInternal(bool bSuccess, const FString& Message);
 	
 	TSharedPtr<FTaskExecutor> Executor;
 	mutable FCriticalSection SessionMutex;
 	bool bIsActive;
+
+	FEvent* WorkFinishedEvent;
 
 	FSimpleMulticastDelegate StartedDelegate;
 	FOnExecutorFinished FinishedDelegate;
