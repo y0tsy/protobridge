@@ -1,11 +1,13 @@
 ﻿#include "Workers/PathResolverWorker.h"
+#include "Interfaces/IProtoBridgeFileSystem.h"
 #include "ProtoBridgeDefs.h"
 #include "Misc/Paths.h"
 #include "Internationalization/Regex.h"
 #include "HAL/PlatformProcess.h"
 
-FPathResolverWorker::FPathResolverWorker(const FProtoBridgeEnvironmentContext& InContext)
+FPathResolverWorker::FPathResolverWorker(const FProtoBridgeEnvironmentContext& InContext, TSharedPtr<IProtoBridgeFileSystem> InFileSystem)
 	: Context(InContext)
+	, FileSystem(InFileSystem)
 {
 	InitializeTokens();
 }
@@ -49,7 +51,7 @@ FString FPathResolverWorker::ResolveDirectory(const FString& PathWithPlaceholder
 
 FString FPathResolverWorker::ResolveProtocPath() const
 {
-	if (!Context.ProtocPath.IsEmpty() && FPaths::FileExists(Context.ProtocPath))
+	if (!Context.ProtocPath.IsEmpty() && FileSystem->FileExists(Context.ProtocPath))
 	{
 		return FPaths::ConvertRelativePathToFull(Context.ProtocPath);
 	}
@@ -59,7 +61,7 @@ FString FPathResolverWorker::ResolveProtocPath() const
 
 FString FPathResolverWorker::ResolvePluginPath() const
 {
-	if (!Context.PluginPath.IsEmpty() && FPaths::FileExists(Context.PluginPath))
+	if (!Context.PluginPath.IsEmpty() && FileSystem->FileExists(Context.PluginPath))
 	{
 		return FPaths::ConvertRelativePathToFull(Context.PluginPath);
 	}
@@ -75,6 +77,8 @@ FString FPathResolverWorker::GetExecutableExtension() const
 {
 #if PLATFORM_WINDOWS
 	return TEXT(".exe");
+#elif PLATFORM_MAC || PLATFORM_LINUX
+	return TEXT("");
 #else
 	return TEXT("");
 #endif

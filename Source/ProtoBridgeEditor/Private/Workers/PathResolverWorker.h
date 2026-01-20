@@ -4,10 +4,12 @@
 #include "Interfaces/Workers/IPathResolverWorker.h"
 #include "ProtoBridgeTypes.h"
 
+class IProtoBridgeFileSystem;
+
 class FPathResolverWorker : public IPathResolverWorker
 {
 public:
-	FPathResolverWorker(const FProtoBridgeEnvironmentContext& InContext);
+	FPathResolverWorker(const FProtoBridgeEnvironmentContext& InContext, TSharedPtr<IProtoBridgeFileSystem> InFileSystem);
 	
 	virtual FString ResolveDirectory(const FString& PathWithPlaceholders) const override;
 	virtual FString ResolveProtocPath() const override;
@@ -20,5 +22,6 @@ private:
 	void InitializeTokens();
 
 	FProtoBridgeEnvironmentContext Context;
+	TSharedPtr<IProtoBridgeFileSystem> FileSystem;
 	TMap<FString, FString> PathTokens;
 };

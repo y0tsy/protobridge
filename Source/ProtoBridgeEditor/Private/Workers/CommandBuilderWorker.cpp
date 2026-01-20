@@ -1,8 +1,12 @@
 ﻿#include "Workers/CommandBuilderWorker.h"
+#include "Interfaces/IProtoBridgeFileSystem.h"
 #include "ProtoBridgeDefs.h"
-#include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
-#include "HAL/FileManager.h"
+
+FCommandBuilderWorker::FCommandBuilderWorker(TSharedPtr<IProtoBridgeFileSystem> InFileSystem)
+	: FileSystem(InFileSystem)
+{
+}
 
 FCommandBuildResult FCommandBuilderWorker::BuildCommand(const FProtoBridgeCommandArgs& Args) const
 {
@@ -35,12 +39,12 @@ FCommandBuildResult FCommandBuilderWorker::BuildCommand(const FProtoBridgeComman
 	}
 
 	FString TempDir = FPaths::ProjectSavedDir() / FProtoBridgeDefs::PluginName / FProtoBridgeDefs::TempFolder;
-	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FileSystem->MakeDirectory(TempDir, true);
 
 	FString ArgFilePath = TempDir / FString::Printf(TEXT("cmd_%s%s"), *FGuid::NewGuid().ToString(), *FProtoBridgeDefs::ArgFileExtension);
 	FPaths::NormalizeFilename(ArgFilePath);
 
-	if (FFileHelper::SaveStringToFile(Builder.ToString(), *ArgFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	if (FileSystem->SaveStringToFile(Builder.ToString(), ArgFilePath))
 	{
 		Result.TempArgFilePath = ArgFilePath;
 		Result.Arguments = FString::Printf(TEXT("@\"%s\""), *ArgFilePath);

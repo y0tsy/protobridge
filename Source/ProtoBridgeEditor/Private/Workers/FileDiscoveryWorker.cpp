@@ -1,13 +1,17 @@
 ﻿#include "Workers/FileDiscoveryWorker.h"
-#include "HAL/FileManager.h"
+#include "Interfaces/IProtoBridgeFileSystem.h"
 #include "Misc/Paths.h"
+
+FFileDiscoveryWorker::FFileDiscoveryWorker(TSharedPtr<IProtoBridgeFileSystem> InFileSystem)
+	: FileSystem(InFileSystem)
+{
+}
 
 FFileDiscoveryResult FFileDiscoveryWorker::FindProtoFiles(const FString& InSourcePath, bool bRecursive, const TArray<FString>& InBlacklist) const
 {
 	FFileDiscoveryResult Result;
-	IFileManager& FileManager = IFileManager::Get();
-
-	if (!FileManager.DirectoryExists(*InSourcePath))
+	
+	if (!FileSystem->DirectoryExists(InSourcePath))
 	{
 		Result.bSuccess = false;
 		Result.ErrorMessage = FString::Printf(TEXT("Source directory not found: %s"), *InSourcePath);
@@ -17,11 +21,11 @@ FFileDiscoveryResult FFileDiscoveryWorker::FindProtoFiles(const FString& InSourc
 	TArray<FString> FoundFiles;
 	if (bRecursive)
 	{
-		FileManager.FindFilesRecursive(FoundFiles, *InSourcePath, TEXT("*.proto"), true, false, false);
+		FileSystem->FindFilesRecursive(FoundFiles, InSourcePath, TEXT("*.proto"), true, false);
 	}
 	else
 	{
-		FileManager.FindFiles(FoundFiles, *InSourcePath, TEXT("*.proto"));
+		FileSystem->FindFiles(FoundFiles, InSourcePath, TEXT("*.proto"));
 		for (FString& File : FoundFiles)
 		{
 			File = FPaths::Combine(InSourcePath, File);

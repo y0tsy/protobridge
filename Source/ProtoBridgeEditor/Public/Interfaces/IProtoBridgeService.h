@@ -1,17 +1,18 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "ProtoBridgeTypes.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnProtoBridgeCompilationStarted);
-DECLARE_MULTICAST_DELEGATE_TwoParams(FOnProtoBridgeCompilationFinished, bool /*bSuccess*/, const FString& /*Message*/);
-DECLARE_MULTICAST_DELEGATE_TwoParams(FOnProtoBridgeLogMessage, const FString& /*Message*/, ELogVerbosity::Type /*Verbosity*/);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnProtoBridgeCompilationFinished, bool, const FString&);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnProtoBridgeLogMessage, const FString&, ELogVerbosity::Type);
 
 class PROTOBRIDGEEDITOR_API IProtoBridgeService
 {
 public:
 	virtual ~IProtoBridgeService() = default;
 
-	virtual void CompileAll() = 0;
+	virtual void Compile(const FProtoBridgeConfiguration& Config) = 0;
 	virtual void Cancel() = 0;
 	virtual bool IsCompiling() const = 0;
 
