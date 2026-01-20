@@ -2,6 +2,7 @@
 #include "Interfaces/Workers/IPathResolverWorker.h"
 #include "Interfaces/Workers/IFileDiscoveryWorker.h"
 #include "Interfaces/Workers/ICommandBuilderWorker.h"
+#include "Internationalization/Regex.h"
 
 FCompilationPlanner::FCompilationPlanner(
 	TSharedPtr<IPathResolverWorker> InPathResolver,
@@ -18,6 +19,18 @@ FCompilationPlan FCompilationPlanner::CreatePlan(const FProtoBridgeConfiguration
 {
 	FCompilationPlan Plan;
 	Plan.bIsValid = true;
+
+	if (!Config.ApiMacro.IsEmpty())
+	{
+		const FRegexPattern ValidMacroPattern(TEXT("^[a-zA-Z0-9_]+$"));
+		FRegexMatcher Matcher(ValidMacroPattern, Config.ApiMacro);
+		if (!Matcher.FindNext())
+		{
+			Plan.bIsValid = false;
+			Plan.ErrorMessage = FString::Printf(TEXT("Invalid API Macro name '%s'. It must contain only alphanumeric characters and underscores."), *Config.ApiMacro);
+			return Plan;
+		}
+	}
 
 	FString ResolvedProtoc = PathResolver->ResolveProtocPath();
 	FString ResolvedPlugin = PathResolver->ResolvePluginPath();
@@ -79,7 +92,7 @@ FCompilationPlan FCompilationPlanner::CreatePlan(const FProtoBridgeConfiguration
 	if (Plan.Tasks.Num() == 0 && Plan.bIsValid)
 	{
 		Plan.bIsValid = false;
-		Plan.ErrorMessage = TEXT("No proto files found or no tasks generated.");
+		Plan.ErrorMessage = TEXT("No proto files found or no tasks generated. Check your paths and mappings.");
 	}
 
 	return Plan;
