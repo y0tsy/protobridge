@@ -4,17 +4,14 @@
 #include "Interfaces/IProtoBridgeService.h"
 #include "Services/ProtoBridgeCompilerService.h"
 #include "Workers/ProtoBridgeWorkerFactory.h"
+#include "UI/ProtoBridgeUIManager.h"
+#include "Settings/ProtoBridgeSettings.h"
 #include "ToolMenus.h"
-#include "Logging/MessageLog.h"
-#include "MessageLogModule.h"
-#include "Widgets/Notifications/SNotificationList.h"
-#include "Framework/Notifications/NotificationManager.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
+#include "Interfaces/IPluginManager.h"
 
 #define LOCTEXT_NAMESPACE "FProtoBridgeEditorModule"
-
-static const FName ProtoBridgeMessageLogName = FName("ProtoBridge");
 
 void FProtoBridgeEditorModule::StartupModule()
 {
@@ -24,24 +21,8 @@ void FProtoBridgeEditorModule::StartupModule()
 	CleanupTempFiles();
 
 	CompilerService = MakeShared<FProtoBridgeCompilerService>(MakeShared<FProtoBridgeWorkerFactory>());
-	
-	CompilerService->OnCompilationStarted().AddLambda([this]() {
-		HandleCompilationStarted();
-	});
-	
-	CompilerService->OnCompilationFinished().AddLambda([this](bool bSuccess, const FString& Message) {
-		HandleCompilationFinished(bSuccess, Message);
-	});
-
-	CompilerService->OnLogMessage().AddLambda([this](const FString& Message, ELogVerbosity::Type Verbosity) {
-		HandleLogMessage(Message, Verbosity);
-	});
-
-	FMessageLogModule& MessageLogModule = FModuleManager::LoadModuleChecked<FMessageLogModule>("MessageLog");
-	FMessageLogInitializationOptions InitOptions;
-	InitOptions.bShowPages = true;
-	InitOptions.bShowFilters = true;
-	MessageLogModule.RegisterLogListing(ProtoBridgeMessageLogName, LOCTEXT("ProtoBridgeLogLabel", "ProtoBridge"), InitOptions);
+	UIManager = MakeShared<FProtoBridgeUIManager>(CompilerService);
+	UIManager->Initialize();
 
 	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FProtoBridgeEditorModule::RegisterMenus));
 }
@@ -52,19 +33,16 @@ void FProtoBridgeEditorModule::ShutdownModule()
 	UToolMenus::UnregisterOwner(this);
 
 	FProtoBridgeEditorStyle::Shutdown();
-
-	if (FModuleManager::Get().IsModuleLoaded("MessageLog"))
+	
+	if (UIManager.IsValid())
 	{
-		FMessageLogModule& MessageLogModule = FModuleManager::GetModuleChecked<FMessageLogModule>("MessageLog");
-		MessageLogModule.UnregisterLogListing(ProtoBridgeMessageLogName);
+		UIManager->Shutdown();
+		UIManager.Reset();
 	}
 
 	if (CompilerService.IsValid())
 	{
 		CompilerService->Cancel();
-		CompilerService->OnCompilationStarted().RemoveAll(this);
-		CompilerService->OnCompilationFinished().RemoveAll(this);
-		CompilerService->OnLogMessage().RemoveAll(this);
 		CompilerService.Reset();
 	}
 }
@@ -76,10 +54,15 @@ TSharedPtr<IProtoBridgeService> FProtoBridgeEditorModule::GetService() const
 
 void FProtoBridgeEditorModule::CleanupTempFiles()
 {
-	FString TempDir = FPaths::ProjectSavedDir() / FProtoBridgeDefs::PluginName / FProtoBridgeDefs::TempFolder;
-	if (IFileManager::Get().DirectoryExists(*TempDir))
+	FString SafeBaseDir = FPaths::ProjectSavedDir();
+	FString TempDir = SafeBaseDir / FProtoBridgeDefs::PluginName / FProtoBridgeDefs::TempFolder;
+	
+	if (FPaths::IsUnderDirectory(TempDir, SafeBaseDir))
 	{
-		IFileManager::Get().DeleteDirectory(*TempDir, false, true);
+		if (IFileManager::Get().DirectoryExists(*TempDir))
+		{
+			IFileManager::Get().DeleteDirectory(*TempDir, false, true);
+		}
 	}
 }
 
@@ -108,51 +91,27 @@ void FProtoBridgeEditorModule::OnCompileButtonClicked()
 {
 	if (CompilerService.IsValid())
 	{
-		CompilerService->CompileAll();
-	}
-}
+		const UProtoBridgeSettings* Settings = GetDefault<UProtoBridgeSettings>();
+		
+		FProtoBridgeConfiguration Config;
+		Config.Environment.ProjectDirectory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+		Config.Environment.ProtocPath = Settings->CustomProtocPath.FilePath;
+		Config.Environment.PluginPath = Settings->CustomPluginPath.FilePath;
+		Config.Mappings = Settings->Mappings;
+		Config.ApiMacro = Settings->ApiMacroName;
 
-void FProtoBridgeEditorModule::HandleCompilationStarted()
-{
-	FMessageLog(ProtoBridgeMessageLogName).NewPage(LOCTEXT("CompilationLogPage", "Compilation"));
-}
+		TSharedPtr<IPlugin> SelfPlugin = IPluginManager::Get().FindPlugin(FProtoBridgeDefs::PluginName);
+		if (SelfPlugin.IsValid())
+		{
+			Config.Environment.PluginDirectory = SelfPlugin->GetBaseDir();
+		}
 
-void FProtoBridgeEditorModule::HandleCompilationFinished(bool bSuccess, const FString& Message)
-{
-	FNotificationInfo Info(FText::FromString(Message));
-	Info.ExpireDuration = 3.0f;
-	Info.bUseLargeFont = false;
+		for (const TSharedRef<IPlugin>& Plugin : IPluginManager::Get().GetEnabledPlugins())
+		{
+			Config.Environment.PluginLocations.Add(Plugin->GetName(), Plugin->GetBaseDir());
+		}
 
-	if (bSuccess)
-	{
-		Info.Image = FCoreStyle::Get().GetBrush(TEXT("NotificationList.SuccessImage"));
-	}
-	else
-	{
-		Info.Image = FCoreStyle::Get().GetBrush(TEXT("NotificationList.FailImage"));
-		FMessageLog(ProtoBridgeMessageLogName).Open(EMessageSeverity::Error, true);
-	}
-
-	FSlateNotificationManager::Get().AddNotification(Info);
-}
-
-void FProtoBridgeEditorModule::HandleLogMessage(const FString& Message, ELogVerbosity::Type Verbosity)
-{
-	FMessageLog Logger(ProtoBridgeMessageLogName);
-
-	TSharedPtr<FTokenizedMessage> TokenizedMessage;
-
-	if (Verbosity == ELogVerbosity::Error)
-	{
-		TokenizedMessage = Logger.Error(FText::FromString(Message));
-	}
-	else if (Verbosity == ELogVerbosity::Warning)
-	{
-		TokenizedMessage = Logger.Warning(FText::FromString(Message));
-	}
-	else
-	{
-		TokenizedMessage = Logger.Info(FText::FromString(Message));
+		CompilerService->Compile(Config);
 	}
 }
 

@@ -4,6 +4,7 @@
 #include "Modules/ModuleManager.h"
 
 class IProtoBridgeService;
+class FProtoBridgeUIManager;
 
 class FProtoBridgeEditorModule : public IModuleInterface
 {
@@ -18,9 +19,6 @@ private:
 	void OnCompileButtonClicked();
 	void CleanupTempFiles();
 	
-	void HandleCompilationStarted();
-	void HandleCompilationFinished(bool bSuccess, const FString& Message);
-	void HandleLogMessage(const FString& Message, ELogVerbosity::Type Verbosity);
-
 	TSharedPtr<IProtoBridgeService> CompilerService;
+	TSharedPtr<FProtoBridgeUIManager> UIManager;
 };
