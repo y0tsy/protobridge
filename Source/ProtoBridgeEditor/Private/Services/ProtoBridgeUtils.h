@@ -11,9 +11,11 @@ public:
 	static FString ResolvePluginPath(const FProtoBridgeEnvironmentContext& Context);
 	
 	static bool FindProtoFiles(const FString& SourceDir, bool bRecursive, const TArray<FString>& Blacklist, TArray<FString>& OutFiles);
+	static bool IsPathSafe(const FString& InPath, const FProtoBridgeEnvironmentContext& Context);
 	
 	static bool BuildCommandArguments(const FProtoBridgeConfiguration& Config, const FString& SourceDir, const FString& DestDir, const TArray<FString>& Files, FString& OutArgs, FString& OutArgFilePath);
 
 private:
 	static FString GetPlatformBinaryPath(const FString& BaseDir, const FString& ExecName);
+	static bool SaveArgumentFile(const FString& Content, FString& OutFilePath);
 };

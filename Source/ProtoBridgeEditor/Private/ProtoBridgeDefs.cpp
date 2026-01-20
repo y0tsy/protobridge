@@ -15,3 +15,6 @@ const FString FProtoBridgeDefs::ProtoWildcard = TEXT("*.proto");
 const FString FProtoBridgeDefs::TokenProjectDir = TEXT("{Project}");
 const FString FProtoBridgeDefs::TokenPluginDir = TEXT("{ProtoBridgePlugin}");
 const FString FProtoBridgeDefs::TokenPluginMacro = TEXT("{Plugin:");
+
+const double FProtoBridgeDefs::ExecutionTimeoutSeconds = 60.0;
+const double FProtoBridgeDefs::LogTimeLimitSeconds = 0.015;

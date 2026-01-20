@@ -132,6 +132,18 @@ bool FProtoBridgeUtils::FindProtoFiles(const FString& SourceDir, bool bRecursive
 	return true;
 }
 
+bool FProtoBridgeUtils::IsPathSafe(const FString& InPath, const FProtoBridgeEnvironmentContext& Context)
+{
+	if (FPaths::IsUnderDirectory(InPath, Context.ProjectDirectory)) return true;
+	if (FPaths::IsUnderDirectory(InPath, Context.PluginDirectory)) return true;
+	
+	for (const auto& Pair : Context.PluginLocations)
+	{
+		if (FPaths::IsUnderDirectory(InPath, Pair.Value)) return true;
+	}
+	return false;
+}
+
 bool FProtoBridgeUtils::BuildCommandArguments(const FProtoBridgeConfiguration& Config, const FString& SourceDir, const FString& DestDir, const TArray<FString>& Files, FString& OutArgs, FString& OutArgFilePath)
 {
 	TStringBuilder<4096> Builder;
@@ -170,18 +182,28 @@ bool FProtoBridgeUtils::BuildCommandArguments(const FProtoBridgeConfiguration& C
 		Builder.Appendf(TEXT("\"%s\"\n"), *CleanFile);
 	}
 
+	FString ArgContent = Builder.ToString();
+	if (SaveArgumentFile(ArgContent, OutArgFilePath))
+	{
+		OutArgs = FString::Printf(TEXT("@\"%s\""), *OutArgFilePath);
+		return true;
+	}
+
+	return false;
+}
+
+bool FProtoBridgeUtils::SaveArgumentFile(const FString& Content, FString& OutFilePath)
+{
 	FString TempDir = FPaths::ProjectSavedDir() / FProtoBridgeDefs::PluginName / FProtoBridgeDefs::TempFolder;
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 
 	FString ArgFilePath = TempDir / FString::Printf(TEXT("cmd_%s%s"), *FGuid::NewGuid().ToString(), *FProtoBridgeDefs::ArgFileExtension);
 	FPaths::NormalizeFilename(ArgFilePath);
 
-	if (FFileHelper::SaveStringToFile(Builder.ToString(), *ArgFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	if (FFileHelper::SaveStringToFile(Content, *ArgFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 	{
-		OutArgFilePath = ArgFilePath;
-		OutArgs = FString::Printf(TEXT("@\"%s\""), *ArgFilePath);
+		OutFilePath = ArgFilePath;
 		return true;
 	}
-
 	return false;
 }

@@ -1,6 +1,5 @@
 ﻿#include "Services/CompilationPlanner.h"
 #include "Services/ProtoBridgeUtils.h"
-#include "Misc/Paths.h"
 
 FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfiguration& Config)
 {
@@ -17,18 +16,6 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 		return Plan;
 	}
 
-	auto IsPathSafe = [&](const FString& InPath) -> bool
-	{
-		if (FPaths::IsUnderDirectory(InPath, Config.Environment.ProjectDirectory)) return true;
-		if (FPaths::IsUnderDirectory(InPath, Config.Environment.PluginDirectory)) return true;
-		
-		for (const auto& Pair : Config.Environment.PluginLocations)
-		{
-			if (FPaths::IsUnderDirectory(InPath, Pair.Value)) return true;
-		}
-		return false;
-	};
-
 	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
 	{
 		FString Source = FProtoBridgeUtils::ResolvePath(Mapping.SourcePath.Path, Config.Environment);
@@ -36,14 +23,14 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 
 		if (Source.IsEmpty() || Dest.IsEmpty()) continue;
 
-		if (!IsPathSafe(Source))
+		if (!FProtoBridgeUtils::IsPathSafe(Source, Config.Environment))
 		{
 			Plan.bIsValid = false;
 			Plan.ErrorMessage = FString::Printf(TEXT("Security Error: Source path is outside project or plugins: %s"), *Source);
 			return Plan;
 		}
 
-		if (!IsPathSafe(Dest))
+		if (!FProtoBridgeUtils::IsPathSafe(Dest, Config.Environment))
 		{
 			Plan.bIsValid = false;
 			Plan.ErrorMessage = FString::Printf(TEXT("Security Error: Destination path is outside project or plugins: %s"), *Dest);

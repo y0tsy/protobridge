@@ -1,5 +1,6 @@
 ﻿#include "Services/ProtoBridgeCompilerService.h"
 #include "Services/CompilationSession.h"
+#include "ProtoBridgeDefs.h"
 #include "Async/Async.h"
 #include "HAL/PlatformTime.h"
 
@@ -82,8 +83,7 @@ void FProtoBridgeCompilerService::OnSessionFinished(bool bSuccess, const FString
 void FProtoBridgeCompilerService::ProcessLogQueue()
 {
 	double StartTime = FPlatformTime::Seconds();
-	const double MaxExecutionTime = 0.015; 
-
+	
 	while (true)
 	{
 		FString Msg;
@@ -105,7 +105,7 @@ void FProtoBridgeCompilerService::ProcessLogQueue()
 		}
 		LogMessageDelegate.Broadcast(Msg, Verbosity);
 
-		if ((FPlatformTime::Seconds() - StartTime) > MaxExecutionTime)
+		if ((FPlatformTime::Seconds() - StartTime) > FProtoBridgeDefs::LogTimeLimitSeconds)
 		{
 			break;
 		}

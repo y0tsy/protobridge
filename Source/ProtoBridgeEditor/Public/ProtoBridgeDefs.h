@@ -19,4 +19,7 @@ struct PROTOBRIDGEEDITOR_API FProtoBridgeDefs
 	static const FString TokenProjectDir;
 	static const FString TokenPluginDir;
 	static const FString TokenPluginMacro;
+
+	static const double ExecutionTimeoutSeconds;
+	static const double LogTimeLimitSeconds;
 };
