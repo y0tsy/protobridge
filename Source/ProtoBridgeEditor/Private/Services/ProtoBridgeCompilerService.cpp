@@ -1,10 +1,9 @@
 ﻿#include "Services/ProtoBridgeCompilerService.h"
-#include "Interfaces/IProtoBridgeWorkerFactory.h"
 #include "Services/CompilationSession.h"
+#include "Async/Async.h"
 #include "Misc/CoreDelegates.h"
 
-FProtoBridgeCompilerService::FProtoBridgeCompilerService(TSharedPtr<IProtoBridgeWorkerFactory> InFactory)
-	: WorkerFactory(InFactory)
+FProtoBridgeCompilerService::FProtoBridgeCompilerService()
 {
 }
 
@@ -21,7 +20,7 @@ void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Confi
 {
 	Cancel();
 
-	CurrentSession = MakeShared<FCompilationSession>(WorkerFactory);
+	CurrentSession = MakeShared<FCompilationSession>();
 	CurrentSession->OnStarted().AddSP(this, &FProtoBridgeCompilerService::OnSessionStarted);
 	CurrentSession->OnLog().AddSP(this, &FProtoBridgeCompilerService::OnSessionLog);
 	CurrentSession->OnFinished().AddSP(this, &FProtoBridgeCompilerService::OnSessionFinished);
@@ -48,7 +47,7 @@ void FProtoBridgeCompilerService::OnSessionStarted()
 	AsyncTask(ENamedThreads::GameThread, [this]()
 	{
 		CompilationStartedDelegate.Broadcast();
-		LogMessageDelegate.Broadcast(TEXT("Starting compilation..."), ELogVerbosity::Log);
+		LogMessageDelegate.Broadcast(TEXT("--- Compilation Started ---"), ELogVerbosity::Log);
 	});
 
 	if (!LogTickerHandle.IsValid())
@@ -59,7 +58,7 @@ void FProtoBridgeCompilerService::OnSessionStarted()
 				ProcessLogQueue();
 				return true;
 			}), 
-			0.1f
+			0.05f
 		);
 	}
 }
@@ -74,7 +73,7 @@ void FProtoBridgeCompilerService::OnSessionFinished(bool bSuccess, const FString
 {
 	AsyncTask(ENamedThreads::GameThread, [this, bSuccess, Msg]()
 	{
-		ProcessLogQueue(); 
+		ProcessLogQueue();
 		if (LogTickerHandle.IsValid())
 		{
 			FTSTicker::GetCoreTicker().RemoveTicker(LogTickerHandle);
@@ -88,13 +87,13 @@ void FProtoBridgeCompilerService::OnSessionFinished(bool bSuccess, const FString
 
 void FProtoBridgeCompilerService::ProcessLogQueue()
 {
-	TArray<FString> QueueCopy;
+	TArray<FString> TempQueue;
 	{
 		FScopeLock Lock(&LogMutex);
-		Exchange(LogQueue, QueueCopy);
+		TempQueue = MoveTemp(LogQueue);
 	}
 
-	for (const FString& Msg : QueueCopy)
+	for (const FString& Msg : TempQueue)
 	{
 		ELogVerbosity::Type Verbosity = ELogVerbosity::Display;
 		if (Msg.Contains(TEXT("error"), ESearchCase::IgnoreCase))
@@ -105,7 +104,6 @@ void FProtoBridgeCompilerService::ProcessLogQueue()
 		{
 			Verbosity = ELogVerbosity::Warning;
 		}
-		
 		LogMessageDelegate.Broadcast(Msg, Verbosity);
 	}
 }

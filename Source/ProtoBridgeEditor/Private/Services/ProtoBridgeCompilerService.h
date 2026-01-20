@@ -4,13 +4,12 @@
 #include "Interfaces/IProtoBridgeService.h"
 #include "Async/Async.h"
 
-class IProtoBridgeWorkerFactory;
 class FCompilationSession;
 
 class FProtoBridgeCompilerService : public IProtoBridgeService, public TSharedFromThis<FProtoBridgeCompilerService>
 {
 public:
-	FProtoBridgeCompilerService(TSharedPtr<IProtoBridgeWorkerFactory> InFactory);
+	FProtoBridgeCompilerService();
 	virtual ~FProtoBridgeCompilerService();
 
 	virtual void Compile(const FProtoBridgeConfiguration& Config) override;
@@ -27,7 +26,6 @@ private:
 	void OnSessionFinished(bool bSuccess, const FString& Msg);
 	void ProcessLogQueue();
 
-	TSharedPtr<IProtoBridgeWorkerFactory> WorkerFactory;
 	TSharedPtr<FCompilationSession> CurrentSession;
 	
 	FOnProtoBridgeCompilationStarted CompilationStartedDelegate;

@@ -1,13 +1,11 @@
 ﻿#include "Services/CompilationSession.h"
-#include "Interfaces/IProtoBridgeWorkerFactory.h"
-#include "Interfaces/Workers/ICompilationPlanner.h"
-#include "Interfaces/Workers/ITaskExecutor.h"
-#include "Async/Async.h"
+#include "Services/TaskExecutor.h"
+#include "Services/ProtoBridgeUtils.h"
 #include "Misc/ScopeLock.h"
+#include "Async/Async.h"
 
-FCompilationSession::FCompilationSession(TSharedPtr<IProtoBridgeWorkerFactory> InFactory)
-	: Factory(InFactory)
-	, bIsActive(false)
+FCompilationSession::FCompilationSession()
+	: bIsActive(false)
 {
 }
 
@@ -18,7 +16,7 @@ FCompilationSession::~FCompilationSession()
 
 void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 {
-	FScopeLock Lock(&StateMutex);
+	FScopeLock Lock(&SessionMutex);
 	if (bIsActive) return;
 	bIsActive = true;
 
@@ -36,9 +34,9 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 
 void FCompilationSession::Cancel()
 {
-	TSharedPtr<ITaskExecutor> ExecutorToCancel;
+	TSharedPtr<FTaskExecutor> ExecutorToCancel;
 	{
-		FScopeLock Lock(&StateMutex);
+		FScopeLock Lock(&SessionMutex);
 		if (!bIsActive) return;
 		ExecutorToCancel = Executor;
 	}
@@ -51,65 +49,108 @@ void FCompilationSession::Cancel()
 
 bool FCompilationSession::IsRunning() const
 {
-	FScopeLock Lock(&StateMutex);
+	FScopeLock Lock(&SessionMutex);
 	return bIsActive;
 }
 
-void FCompilationSession::RunInternal(FProtoBridgeConfiguration Config)
+void FCompilationSession::RunInternal(const FProtoBridgeConfiguration& Config)
 {
-	TSharedPtr<ICompilationPlanner> Planner = Factory->CreatePlanner(Config.Environment);
-	if (!Planner.IsValid())
-	{
-		FScopeLock Lock(&StateMutex);
-		bIsActive = false;
-		FinishedDelegate.Broadcast(false, TEXT("Failed to create Planner"));
-		return;
-	}
-
-	LogDelegate.Broadcast(TEXT("Analyzing files..."));
-	FCompilationPlan Plan = Planner->CreatePlan(Config);
+	LogDelegate.Broadcast(TEXT("Starting discovery..."));
+	
+	FCompilationPlan Plan = GeneratePlan(Config);
 
 	if (!Plan.bIsValid)
 	{
-		FScopeLock Lock(&StateMutex);
+		FScopeLock Lock(&SessionMutex);
 		bIsActive = false;
 		FinishedDelegate.Broadcast(false, Plan.ErrorMessage);
 		return;
 	}
 
-	LogDelegate.Broadcast(FString::Printf(TEXT("Generated %d compilation tasks."), Plan.Tasks.Num()));
-
+	if (Plan.Tasks.Num() == 0)
 	{
-		FScopeLock Lock(&StateMutex);
-		if (!bIsActive) return; 
-		Executor = Factory->CreateTaskExecutor();
-	}
-
-	if (Executor.IsValid())
-	{
-		Executor->OnOutput().AddSP(this, &FCompilationSession::HandleExecutorOutput);
-		Executor->OnFinished().AddSP(this, &FCompilationSession::HandleExecutorFinished);
-		Executor->ExecutePlan(Plan);
-	}
-	else
-	{
-		FScopeLock Lock(&StateMutex);
+		FScopeLock Lock(&SessionMutex);
 		bIsActive = false;
-		FinishedDelegate.Broadcast(false, TEXT("Failed to create Executor"));
+		FinishedDelegate.Broadcast(true, TEXT("No files to compile"));
+		return;
+	}
+
+	LogDelegate.Broadcast(FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num()));
+
+	{
+		FScopeLock Lock(&SessionMutex);
+		if (bIsActive)
+		{
+			Executor = MakeShared<FTaskExecutor>();
+			
+			Executor->OnOutput().AddWeakLambda(this, [this](const FString& Msg)
+			{ 
+				LogDelegate.Broadcast(Msg); 
+			});
+			
+			Executor->OnFinished().AddWeakLambda(this, [this](bool bSuccess, const FString& Msg)
+			{
+				FScopeLock InnerLock(&SessionMutex);
+				bIsActive = false;
+				Executor.Reset();
+				FinishedDelegate.Broadcast(bSuccess, Msg);
+			});
+			
+			Executor->Execute(Plan.Tasks);
+		}
 	}
 }
 
-void FCompilationSession::HandleExecutorOutput(const FString& Msg)
+FCompilationPlan FCompilationSession::GeneratePlan(const FProtoBridgeConfiguration& Config)
 {
-	LogDelegate.Broadcast(Msg);
-}
+	FCompilationPlan Plan;
+	Plan.bIsValid = true;
 
-void FCompilationSession::HandleExecutorFinished(bool bSuccess)
-{
-	FScopeLock Lock(&StateMutex);
-	bIsActive = false;
-	Executor.Reset();
-	
-	FString Msg = bSuccess ? TEXT("Compilation success") : TEXT("Compilation failed");
-	FinishedDelegate.Broadcast(bSuccess, Msg);
+	FString Protoc = FProtoBridgeUtils::ResolveProtocPath(Config.Environment);
+	FString Plugin = FProtoBridgeUtils::ResolvePluginPath(Config.Environment);
+
+	if (Protoc.IsEmpty() || Plugin.IsEmpty())
+	{
+		Plan.bIsValid = false;
+		Plan.ErrorMessage = TEXT("Failed to resolve protoc or plugin paths");
+		return Plan;
+	}
+
+	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
+	{
+		FString Source = FProtoBridgeUtils::ResolvePath(Mapping.SourcePath.Path, Config.Environment);
+		FString Dest = FProtoBridgeUtils::ResolvePath(Mapping.DestinationPath.Path, Config.Environment);
+
+		if (Source.IsEmpty() || Dest.IsEmpty()) continue;
+
+		TArray<FString> Files;
+		if (!FProtoBridgeUtils::FindProtoFiles(Source, Mapping.bRecursive, Mapping.Blacklist, Files))
+		{
+			Plan.bIsValid = false;
+			Plan.ErrorMessage = FString::Printf(TEXT("Failed to scan directory: %s"), *Source);
+			return Plan;
+		}
+
+		if (Files.Num() > 0)
+		{
+			FString Args, ArgFile;
+			if (FProtoBridgeUtils::BuildCommandArguments(Config, Source, Dest, Files, Args, ArgFile))
+			{
+				FCompilationTask Task;
+				Task.ProtocPath = Protoc;
+				Task.SourceDir = Source;
+				Task.DestinationDir = Dest;
+				Task.Arguments = Args;
+				Task.TempArgFilePath = ArgFile;
+				Plan.Tasks.Add(Task);
+			}
+			else
+			{
+				Plan.bIsValid = false;
+				Plan.ErrorMessage = TEXT("Failed to build arguments (possible path injection)");
+				return Plan;
+			}
+		}
+	}
+	return Plan;
 }

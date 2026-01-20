@@ -3,7 +3,6 @@
 #include "ProtoBridgeDefs.h"
 #include "Interfaces/IProtoBridgeService.h"
 #include "Services/ProtoBridgeCompilerService.h"
-#include "Workers/ProtoBridgeWorkerFactory.h"
 #include "UI/ProtoBridgeUIManager.h"
 #include "Settings/ProtoBridgeSettings.h"
 #include "ToolMenus.h"
@@ -20,7 +19,7 @@ void FProtoBridgeEditorModule::StartupModule()
 	
 	CleanupTempFiles();
 
-	CompilerService = MakeShared<FProtoBridgeCompilerService>(MakeShared<FProtoBridgeWorkerFactory>());
+	CompilerService = MakeShared<FProtoBridgeCompilerService>();
 	UIManager = MakeShared<FProtoBridgeUIManager>(CompilerService);
 	UIManager->Initialize();
 
