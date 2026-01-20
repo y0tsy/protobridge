@@ -2,18 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Interfaces/IProtoBridgeService.h"
-#include "Misc/MonitoredProcess.h"
+#include "ProtoBridgeTypes.h"
 
 class IProtoBridgeWorkerFactory;
-struct FProtoBridgeCommandArgs;
-
-struct FCompilationTask
-{
-	FString ProtocPath;
-	FString Arguments;
-	FString TempArgFilePath;
-	FString SourceDir;
-};
+class IProtocExecutor;
+struct FProtoBridgeMapping;
 
 class FProtoBridgeCompilerService : public IProtoBridgeService, public TSharedFromThis<FProtoBridgeCompilerService>
 {
@@ -30,16 +23,19 @@ public:
 	virtual FOnProtoBridgeLogMessage& OnLogMessage() override { return LogMessageDelegate; }
 
 private:
+	void ExecuteCompilation(TSharedPtr<IProtoBridgeWorkerFactory> Factory, const FProtoBridgeEnvironmentContext& Context, const TArray<FProtoBridgeMapping>& Mappings);
 	void StartNextTask();
-	void ProcessTask(const FCompilationTask& Task);
+	void HandleExecutorOutput(const FString& Output);
+	void HandleExecutorCompleted(int32 ReturnCode);
 	void CleanUpTask(const FCompilationTask& Task);
-	
-	void HandleProcessOutput(FString Output);
-	void HandleProcessCompleted(int32 ReturnCode);
-	void HandleProcessCanceled();
+	void FinalizeCompilation();
+	void ReportErrorAndStop(const FString& ErrorMsg);
+	void DispatchToGameThread(TFunction<void()> Task);
 
 	TSharedPtr<IProtoBridgeWorkerFactory> WorkerFactory;
-	TSharedPtr<FMonitoredProcess> CurrentProcess;
+	TSharedPtr<IProtocExecutor> CurrentExecutor;
+	
+	mutable FCriticalSection StateMutex;
 	TArray<FCompilationTask> TaskQueue;
 	FCompilationTask CurrentTask;
 	
