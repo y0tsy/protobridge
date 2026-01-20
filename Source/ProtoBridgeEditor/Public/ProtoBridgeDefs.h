@@ -7,6 +7,7 @@ struct PROTOBRIDGEEDITOR_API FProtoBridgeDefs
 	static const FString PluginName;
 	static const FString ProtocExecutableName;
 	static const FString PluginExecutableName;
+	static const FString PluginGeneratorCommand; 
 	static const FString GeneratedFileExtension;
 	static const FString ArgFileExtension;
 	static const FString ProtoExtension;

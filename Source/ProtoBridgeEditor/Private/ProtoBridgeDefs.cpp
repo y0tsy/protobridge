@@ -3,6 +3,7 @@
 const FString FProtoBridgeDefs::PluginName = TEXT("ProtoBridge");
 const FString FProtoBridgeDefs::ProtocExecutableName = TEXT("protoc");
 const FString FProtoBridgeDefs::PluginExecutableName = TEXT("bridge_generator");
+const FString FProtoBridgeDefs::PluginGeneratorCommand = TEXT("protoc-gen-ue");
 const FString FProtoBridgeDefs::GeneratedFileExtension = TEXT(".h");
 const FString FProtoBridgeDefs::ArgFileExtension = TEXT(".args");
 const FString FProtoBridgeDefs::ProtoExtension = TEXT("proto");
