@@ -2,16 +2,19 @@
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
 
-TArray<FString> FFileDiscoveryWorker::FindProtoFiles(const FString& InSourcePath, bool bRecursive, const TArray<FString>& InBlacklist) const
+FFileDiscoveryResult FFileDiscoveryWorker::FindProtoFiles(const FString& InSourcePath, bool bRecursive, const TArray<FString>& InBlacklist) const
 {
-	TArray<FString> FoundFiles;
+	FFileDiscoveryResult Result;
 	IFileManager& FileManager = IFileManager::Get();
 
 	if (!FileManager.DirectoryExists(*InSourcePath))
 	{
-		return FoundFiles;
+		Result.bSuccess = false;
+		Result.ErrorMessage = FString::Printf(TEXT("Source directory not found: %s"), *InSourcePath);
+		return Result;
 	}
 
+	TArray<FString> FoundFiles;
 	if (bRecursive)
 	{
 		FileManager.FindFilesRecursive(FoundFiles, *InSourcePath, TEXT("*.proto"), true, false, false);
@@ -53,5 +56,7 @@ TArray<FString> FFileDiscoveryWorker::FindProtoFiles(const FString& InSourcePath
 		}
 	}
 
-	return FoundFiles;
+	Result.Files = FoundFiles;
+	Result.bSuccess = true;
+	return Result;
 }
