@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Settings/ProtoBridgeSettings.h"
 
 struct FProtoBridgeEnvironmentContext
 {
@@ -8,8 +9,14 @@ struct FProtoBridgeEnvironmentContext
 	FString PluginDirectory;
 	FString ProtocPath;
 	FString PluginPath;
-	FString ApiMacro;
 	TMap<FString, FString> PluginLocations;
+};
+
+struct FProtoBridgeConfiguration
+{
+	FProtoBridgeEnvironmentContext Environment;
+	TArray<FProtoBridgeMapping> Mappings;
+	FString ApiMacro;
 };
 
 struct FCompilationTask
