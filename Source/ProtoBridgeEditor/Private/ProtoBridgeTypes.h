@@ -28,13 +28,6 @@ struct FCompilationTask
 	FString Arguments;
 };
 
-struct FFileDiscoveryResult
-{
-	TArray<FString> Files;
-	FString ErrorMessage;
-	bool bSuccess = true;
-};
-
 struct FCompilationPlan
 {
 	TArray<FCompilationTask> Tasks;

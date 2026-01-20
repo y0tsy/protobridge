@@ -14,4 +14,9 @@ struct PROTOBRIDGEEDITOR_API FProtoBridgeDefs
 	static const FString ThirdPartyFolder;
 	static const FString BinFolder;
 	static const FString TempFolder;
+	static const FString ProtoWildcard;
+	
+	static const FString TokenProjectDir;
+	static const FString TokenPluginDir;
+	static const FString TokenPluginMacro;
 };
