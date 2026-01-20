@@ -1,316 +1,111 @@
 ﻿#include "Services/ProtoBridgeCompilerService.h"
 #include "Interfaces/IProtoBridgeWorkerFactory.h"
-#include "Interfaces/IProtocExecutor.h"
-#include "Interfaces/Workers/IPathResolverWorker.h"
-#include "Interfaces/Workers/IFileDiscoveryWorker.h"
-#include "Interfaces/Workers/ICommandBuilderWorker.h"
-#include "Async/Async.h"
-#include "HAL/FileManager.h"
-#include "Misc/ScopeLock.h"
-#include "ProtoBridgeDefs.h"
-#include "Misc/Paths.h"
+#include "Services/CompilationSession.h"
+#include "Misc/CoreDelegates.h"
 
 FProtoBridgeCompilerService::FProtoBridgeCompilerService(TSharedPtr<IProtoBridgeWorkerFactory> InFactory)
 	: WorkerFactory(InFactory)
-	, bIsActive(false)
-	, bHasErrors(false)
 {
 }
 
 FProtoBridgeCompilerService::~FProtoBridgeCompilerService()
 {
 	Cancel();
+	if (LogTickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(LogTickerHandle);
+	}
 }
 
 void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Config)
 {
-	FScopeLock Lock(&StateMutex);
-	if (bIsActive)
-	{
-		return;
-	}
-	bIsActive = true;
-	bHasErrors = false;
-	TaskQueue.Empty();
+	Cancel();
 
-	DispatchToGameThread([this]()
-	{
-		CompilationStartedDelegate.Broadcast();
-		LogMessageDelegate.Broadcast(TEXT("Preparing build..."), ELogVerbosity::Log);
-	});
+	CurrentSession = MakeShared<FCompilationSession>(WorkerFactory);
+	CurrentSession->OnStarted().AddSP(this, &FProtoBridgeCompilerService::OnSessionStarted);
+	CurrentSession->OnLog().AddSP(this, &FProtoBridgeCompilerService::OnSessionLog);
+	CurrentSession->OnFinished().AddSP(this, &FProtoBridgeCompilerService::OnSessionFinished);
 
-	TWeakPtr<FProtoBridgeCompilerService> WeakSelf = AsShared();
-	TSharedPtr<IProtoBridgeWorkerFactory> Factory = WorkerFactory;
-
-	Async(EAsyncExecution::ThreadPool, [WeakSelf, Factory, Config]()
-	{
-		if (TSharedPtr<FProtoBridgeCompilerService> Self = WeakSelf.Pin())
-		{
-			Self->ExecuteCompilation(Factory, Config);
-		}
-	});
-}
-
-void FProtoBridgeCompilerService::ExecuteCompilation(TSharedPtr<IProtoBridgeWorkerFactory> Factory, const FProtoBridgeConfiguration& Config)
-{
-	TSharedPtr<IPathResolverWorker> PathResolver = Factory->CreatePathResolver(Config.Environment);
-	TSharedPtr<IFileDiscoveryWorker> FileDiscovery = Factory->CreateFileDiscovery();
-	TSharedPtr<ICommandBuilderWorker> CommandBuilder = Factory->CreateCommandBuilder();
-
-	FString ResolvedProtoc = PathResolver->ResolveProtocPath();
-	FString ResolvedPlugin = PathResolver->ResolvePluginPath();
-
-	if (ResolvedProtoc.IsEmpty())
-	{
-		ReportErrorAndStop(TEXT("Protoc executable path resolution failed."));
-		return;
-	}
-
-	if (ResolvedPlugin.IsEmpty())
-	{
-		ReportErrorAndStop(TEXT("Plugin executable path resolution failed."));
-		return;
-	}
-
-	TArray<FCompilationTask> GeneratedTasks;
-
-	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
-	{
-		{
-			FScopeLock Lock(&StateMutex);
-			if (!bIsActive) return;
-		}
-
-		FString SourceDir = PathResolver->ResolveDirectory(Mapping.SourcePath.Path);
-		FString DestDir = PathResolver->ResolveDirectory(Mapping.DestinationPath.Path);
-
-		if (SourceDir.IsEmpty() || DestDir.IsEmpty()) continue;
-
-		FFileDiscoveryResult DiscoveryResult = FileDiscovery->FindProtoFiles(SourceDir, Mapping.bRecursive, Mapping.Blacklist);
-		
-		if (!DiscoveryResult.bSuccess)
-		{
-			DispatchToGameThread([this, Msg = DiscoveryResult.ErrorMessage]()
-			{
-				LogMessageDelegate.Broadcast(Msg, ELogVerbosity::Error);
-				bHasErrors = true;
-			});
-			continue;
-		}
-
-		if (DiscoveryResult.Files.Num() == 0) continue;
-
-		FProtoBridgeCommandArgs Args;
-		Args.ProtocPath = ResolvedProtoc;
-		Args.PluginPath = ResolvedPlugin;
-		Args.SourceDirectory = SourceDir;
-		Args.DestinationDirectory = DestDir;
-		Args.ProtoFiles = DiscoveryResult.Files;
-		Args.ApiMacro = Config.ApiMacro;
-
-		FCommandBuildResult BuildResult = CommandBuilder->BuildCommand(Args);
-		
-		if (!BuildResult.Arguments.IsEmpty())
-		{
-			FCompilationTask Task;
-			Task.ProtocPath = ResolvedProtoc;
-			Task.Arguments = BuildResult.Arguments;
-			Task.TempArgFilePath = BuildResult.TempArgFilePath;
-			Task.SourceDir = SourceDir;
-			GeneratedTasks.Add(Task);
-		}
-	}
-
-	bool bHasTasks = false;
-	{
-		FScopeLock Lock(&StateMutex);
-		if (bIsActive)
-		{
-			TaskQueue = GeneratedTasks;
-			bHasTasks = TaskQueue.Num() > 0;
-		}
-	}
-
-	if (!bHasTasks)
-	{
-		DispatchToGameThread([this]()
-		{
-			OnLogMessage().Broadcast(TEXT("No files to compile."), ELogVerbosity::Warning);
-			FinalizeCompilation();
-		});
-	}
-	else
-	{
-		DispatchToGameThread([this]()
-		{
-			StartNextTask();
-		});
-	}
+	CurrentSession->Start(Config);
 }
 
 void FProtoBridgeCompilerService::Cancel()
 {
-	TSharedPtr<IProtocExecutor> ProcToCancel;
+	if (CurrentSession.IsValid())
 	{
-		FScopeLock Lock(&StateMutex);
-		bIsActive = false;
-		TaskQueue.Empty();
-		ProcToCancel = CurrentExecutor;
+		CurrentSession->Cancel();
+		CurrentSession.Reset();
 	}
-
-	if (ProcToCancel.IsValid())
-	{
-		ProcToCancel->Cancel();
-	}
-	
-	DispatchToGameThread([this]()
-	{
-		LogMessageDelegate.Broadcast(TEXT("Compilation canceled."), ELogVerbosity::Warning);
-	});
 }
 
 bool FProtoBridgeCompilerService::IsCompiling() const
 {
-	FScopeLock Lock(&StateMutex);
-	return bIsActive;
+	return CurrentSession.IsValid() && CurrentSession->IsRunning();
 }
 
-void FProtoBridgeCompilerService::StartNextTask()
+void FProtoBridgeCompilerService::OnSessionStarted()
 {
-	FCompilationTask TaskToRun;
-	bool bFoundTask = false;
-
+	AsyncTask(ENamedThreads::GameThread, [this]()
 	{
-		FScopeLock Lock(&StateMutex);
-		if (!bIsActive) 
-		{
-			return;
-		}
+		CompilationStartedDelegate.Broadcast();
+		LogMessageDelegate.Broadcast(TEXT("Starting compilation..."), ELogVerbosity::Log);
+	});
 
-		if (TaskQueue.Num() > 0)
-		{
-			TaskToRun = TaskQueue[0];
-			TaskQueue.RemoveAt(0);
-			bFoundTask = true;
-			CurrentTask = TaskToRun;
-		}
-	}
-
-	if (!bFoundTask)
+	if (!LogTickerHandle.IsValid())
 	{
-		FinalizeCompilation();
-		return;
-	}
-
-	LogMessageDelegate.Broadcast(FString::Printf(TEXT("Compiling: %s"), *TaskToRun.SourceDir), ELogVerbosity::Display);
-
-	CurrentExecutor = WorkerFactory->CreateProtocExecutor();
-	CurrentExecutor->OnOutput().AddSP(this, &FProtoBridgeCompilerService::HandleExecutorOutput);
-	CurrentExecutor->OnCompleted().AddSP(this, &FProtoBridgeCompilerService::HandleExecutorCompleted);
-	
-	if (!CurrentExecutor->Execute(TaskToRun))
-	{
-		LogMessageDelegate.Broadcast(TEXT("Failed to start protoc process."), ELogVerbosity::Error);
-		
-		DispatchToGameThread([this]()
-		{
-			bHasErrors = true;
-			FCompilationTask FailedTask;
+		LogTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateLambda([this](float DeltaTime)
 			{
-				FScopeLock Lock(&StateMutex);
-				FailedTask = CurrentTask;
-				CurrentExecutor.Reset();
-			}
-			CleanUpTask(FailedTask, false);
-			StartNextTask(); 
-		});
+				ProcessLogQueue();
+				return true;
+			}), 
+			0.1f
+		);
 	}
 }
 
-void FProtoBridgeCompilerService::CleanUpTask(const FCompilationTask& Task, bool bSuccess)
+void FProtoBridgeCompilerService::OnSessionLog(const FString& Msg)
 {
-	if (!Task.TempArgFilePath.IsEmpty())
+	FScopeLock Lock(&LogMutex);
+	LogQueue.Add(Msg);
+}
+
+void FProtoBridgeCompilerService::OnSessionFinished(bool bSuccess, const FString& Msg)
+{
+	AsyncTask(ENamedThreads::GameThread, [this, bSuccess, Msg]()
 	{
-		if (bSuccess)
+		ProcessLogQueue(); 
+		if (LogTickerHandle.IsValid())
 		{
-			if (IFileManager::Get().FileExists(*Task.TempArgFilePath))
-			{
-				IFileManager::Get().Delete(*Task.TempArgFilePath, false, true);
-			}
+			FTSTicker::GetCoreTicker().RemoveTicker(LogTickerHandle);
+			LogTickerHandle.Reset();
 		}
-		else
-		{
-			LogMessageDelegate.Broadcast(FString::Printf(TEXT("Task failed, keeping argument file at: %s"), *Task.TempArgFilePath), ELogVerbosity::Warning);
-		}
-	}
+
+		CompilationFinishedDelegate.Broadcast(bSuccess, Msg);
+		CurrentSession.Reset();
+	});
 }
 
-void FProtoBridgeCompilerService::HandleExecutorOutput(const FString& Output)
+void FProtoBridgeCompilerService::ProcessLogQueue()
 {
-	DispatchToGameThread([this, Output]()
+	TArray<FString> QueueCopy;
+	{
+		FScopeLock Lock(&LogMutex);
+		Exchange(LogQueue, QueueCopy);
+	}
+
+	for (const FString& Msg : QueueCopy)
 	{
 		ELogVerbosity::Type Verbosity = ELogVerbosity::Display;
-		if (Output.Contains(TEXT("error"), ESearchCase::IgnoreCase) || Output.Contains(TEXT("Exception"), ESearchCase::IgnoreCase))
+		if (Msg.Contains(TEXT("error"), ESearchCase::IgnoreCase))
 		{
 			Verbosity = ELogVerbosity::Error;
-			bHasErrors = true;
 		}
-		else if (Output.Contains(TEXT("warning"), ESearchCase::IgnoreCase))
+		else if (Msg.Contains(TEXT("warning"), ESearchCase::IgnoreCase))
 		{
 			Verbosity = ELogVerbosity::Warning;
 		}
-		LogMessageDelegate.Broadcast(Output, Verbosity);
-	});
-}
-
-void FProtoBridgeCompilerService::HandleExecutorCompleted(int32 ReturnCode)
-{
-	FCompilationTask FinishedTask;
-	{
-		FScopeLock Lock(&StateMutex);
-		FinishedTask = CurrentTask;
+		
+		LogMessageDelegate.Broadcast(Msg, Verbosity);
 	}
-
-	bool bSuccess = (ReturnCode == 0);
-	CleanUpTask(FinishedTask, bSuccess);
-
-	DispatchToGameThread([this, ReturnCode]()
-	{
-		{
-			FScopeLock Lock(&StateMutex);
-			CurrentExecutor.Reset();
-			if (!bIsActive) return;
-		}
-
-		if (ReturnCode != 0)
-		{
-			LogMessageDelegate.Broadcast(FString::Printf(TEXT("Exited with code %d"), ReturnCode), ELogVerbosity::Error);
-			bHasErrors = true;
-		}
-
-		StartNextTask();
-	});
-}
-
-void FProtoBridgeCompilerService::FinalizeCompilation()
-{
-	FScopeLock Lock(&StateMutex);
-	if (!bIsActive) return;
-
-	bIsActive = false;
-	
-	bool bSuccess = !bHasErrors;
-	FString Msg = bSuccess ? TEXT("Compilation finished successfully.") : TEXT("Compilation finished with errors.");
-	
-	CompilationFinishedDelegate.Broadcast(bSuccess, Msg);
-}
-
-void FProtoBridgeCompilerService::ReportErrorAndStop(const FString& ErrorMsg)
-{
-	DispatchToGameThread([this, ErrorMsg]()
-	{
-		LogMessageDelegate.Broadcast(ErrorMsg, ELogVerbosity::Error);
-		CompilationFinishedDelegate.Broadcast(false, TEXT("Compilation failed"));
-		Cancel();
-	});
 }

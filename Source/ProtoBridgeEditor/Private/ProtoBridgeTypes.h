@@ -34,3 +34,10 @@ struct FFileDiscoveryResult
 	FString ErrorMessage;
 	bool bSuccess = true;
 };
+
+struct FCompilationPlan
+{
+	TArray<FCompilationTask> Tasks;
+	bool bIsValid = false;
+	FString ErrorMessage;
+};
