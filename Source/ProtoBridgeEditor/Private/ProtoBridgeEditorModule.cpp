@@ -9,6 +9,8 @@
 #include "MessageLogModule.h"
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Framework/Notifications/NotificationManager.h"
+#include "HAL/FileManager.h"
+#include "Misc/Paths.h"
 
 #define LOCTEXT_NAMESPACE "FProtoBridgeEditorModule"
 
@@ -18,6 +20,8 @@ void FProtoBridgeEditorModule::StartupModule()
 {
 	FProtoBridgeEditorStyle::Initialize();
 	FProtoBridgeEditorStyle::ReloadTextures();
+	
+	CleanupTempFiles();
 
 	CompilerService = MakeShared<FProtoBridgeCompilerService>(MakeShared<FProtoBridgeWorkerFactory>());
 	
@@ -68,6 +72,15 @@ void FProtoBridgeEditorModule::ShutdownModule()
 TSharedPtr<IProtoBridgeService> FProtoBridgeEditorModule::GetService() const
 {
 	return CompilerService;
+}
+
+void FProtoBridgeEditorModule::CleanupTempFiles()
+{
+	FString TempDir = FPaths::ProjectSavedDir() / FProtoBridgeDefs::PluginName / FProtoBridgeDefs::TempFolder;
+	if (IFileManager::Get().DirectoryExists(*TempDir))
+	{
+		IFileManager::Get().DeleteDirectory(*TempDir, false, true);
+	}
 }
 
 void FProtoBridgeEditorModule::RegisterMenus()

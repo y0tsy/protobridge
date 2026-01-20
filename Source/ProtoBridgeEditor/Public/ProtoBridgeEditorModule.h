@@ -16,11 +16,11 @@ public:
 private:
 	void RegisterMenus();
 	void OnCompileButtonClicked();
+	void CleanupTempFiles();
 	
 	void HandleCompilationStarted();
 	void HandleCompilationFinished(bool bSuccess, const FString& Message);
 	void HandleLogMessage(const FString& Message, ELogVerbosity::Type Verbosity);
 
 	TSharedPtr<IProtoBridgeService> CompilerService;
-	TSharedPtr<class FUICommandList> PluginCommands;
 };
