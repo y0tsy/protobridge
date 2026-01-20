@@ -8,23 +8,20 @@
 
 FString FProtoBridgeUtils::ResolvePath(const FString& InPath, const FProtoBridgeEnvironmentContext& Context)
 {
+	static const TArray<FString> StaticKeys = {
+		FProtoBridgeDefs::TokenPluginDir,
+		FProtoBridgeDefs::TokenProjectDir
+	};
+
 	FString Result = InPath;
-	TMap<FString, FString> Tokens;
-	Tokens.Add(FProtoBridgeDefs::TokenProjectDir, Context.ProjectDirectory);
-	Tokens.Add(FProtoBridgeDefs::TokenPluginDir, Context.PluginDirectory);
-
-	TArray<FString> SortedKeys;
-	Tokens.GetKeys(SortedKeys);
-	SortedKeys.Sort([](const FString& A, const FString& B) {
-		return A.Len() > B.Len();
-	});
-
-	for (const FString& Key : SortedKeys)
+	
+	if (Result.Contains(FProtoBridgeDefs::TokenProjectDir))
 	{
-		if (Result.Contains(Key))
-		{
-			Result = Result.Replace(*Key, *Tokens[Key]);
-		}
+		Result = Result.Replace(*FProtoBridgeDefs::TokenProjectDir, *Context.ProjectDirectory);
+	}
+	if (Result.Contains(FProtoBridgeDefs::TokenPluginDir))
+	{
+		Result = Result.Replace(*FProtoBridgeDefs::TokenPluginDir, *Context.PluginDirectory);
 	}
 
 	static const FRegexPattern PluginPattern(FProtoBridgeDefs::TokenPluginMacro + TEXT("([a-zA-Z0-9_]+)\\}"));
@@ -42,7 +39,9 @@ FString FProtoBridgeUtils::ResolvePath(const FString& InPath, const FProtoBridge
 	}
 
 	FString FullPath = FPaths::ConvertRelativePathToFull(Result);
+	FPaths::CollapseRelativeDirectories(FullPath);
 	FPaths::NormalizeFilename(FullPath);
+	
 	return FullPath;
 }
 

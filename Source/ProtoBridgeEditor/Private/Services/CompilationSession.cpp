@@ -1,6 +1,6 @@
 ﻿#include "Services/CompilationSession.h"
 #include "Services/TaskExecutor.h"
-#include "Services/ProtoBridgeUtils.h"
+#include "Services/CompilationPlanner.h"
 #include "Misc/ScopeLock.h"
 #include "Async/Async.h"
 
@@ -55,27 +55,23 @@ bool FCompilationSession::IsRunning() const
 
 void FCompilationSession::RunInternal(const FProtoBridgeConfiguration& Config)
 {
-	LogDelegate.Broadcast(TEXT("Starting discovery..."));
+	DispatchLog(TEXT("Starting discovery..."));
 	
-	FCompilationPlan Plan = GeneratePlan(Config);
+	FCompilationPlan Plan = FCompilationPlanner::GeneratePlan(Config);
 
 	if (!Plan.bIsValid)
 	{
-		FScopeLock Lock(&SessionMutex);
-		bIsActive = false;
-		FinishedDelegate.Broadcast(false, Plan.ErrorMessage);
+		DispatchFinished(false, Plan.ErrorMessage);
 		return;
 	}
 
 	if (Plan.Tasks.Num() == 0)
 	{
-		FScopeLock Lock(&SessionMutex);
-		bIsActive = false;
-		FinishedDelegate.Broadcast(true, TEXT("No files to compile"));
+		DispatchFinished(true, TEXT("No files to compile"));
 		return;
 	}
 
-	LogDelegate.Broadcast(FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num()));
+	DispatchLog(FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num()));
 
 	{
 		FScopeLock Lock(&SessionMutex);
@@ -83,74 +79,39 @@ void FCompilationSession::RunInternal(const FProtoBridgeConfiguration& Config)
 		{
 			Executor = MakeShared<FTaskExecutor>();
 			
-			Executor->OnOutput().AddWeakLambda(this, [this](const FString& Msg)
-			{ 
-				LogDelegate.Broadcast(Msg); 
-			});
-			
-			Executor->OnFinished().AddWeakLambda(this, [this](bool bSuccess, const FString& Msg)
-			{
-				FScopeLock InnerLock(&SessionMutex);
-				bIsActive = false;
-				Executor.Reset();
-				FinishedDelegate.Broadcast(bSuccess, Msg);
-			});
+			Executor->OnOutput().AddSP(this, &FCompilationSession::DispatchLog);
+			Executor->OnFinished().AddSP(this, &FCompilationSession::DispatchFinished);
 			
 			Executor->Execute(Plan.Tasks);
 		}
 	}
 }
 
-FCompilationPlan FCompilationSession::GeneratePlan(const FProtoBridgeConfiguration& Config)
+void FCompilationSession::DispatchLog(const FString& Message)
 {
-	FCompilationPlan Plan;
-	Plan.bIsValid = true;
-
-	FString Protoc = FProtoBridgeUtils::ResolveProtocPath(Config.Environment);
-	FString Plugin = FProtoBridgeUtils::ResolvePluginPath(Config.Environment);
-
-	if (Protoc.IsEmpty() || Plugin.IsEmpty())
+	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
+	AsyncTask(ENamedThreads::GameThread, [WeakSelf, Message]()
 	{
-		Plan.bIsValid = false;
-		Plan.ErrorMessage = TEXT("Failed to resolve protoc or plugin paths");
-		return Plan;
-	}
+		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
+		{
+			Self->LogDelegate.Broadcast(Message);
+		}
+	});
+}
 
-	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
+void FCompilationSession::DispatchFinished(bool bSuccess, const FString& Message)
+{
+	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
+	AsyncTask(ENamedThreads::GameThread, [WeakSelf, bSuccess, Message]()
 	{
-		FString Source = FProtoBridgeUtils::ResolvePath(Mapping.SourcePath.Path, Config.Environment);
-		FString Dest = FProtoBridgeUtils::ResolvePath(Mapping.DestinationPath.Path, Config.Environment);
-
-		if (Source.IsEmpty() || Dest.IsEmpty()) continue;
-
-		TArray<FString> Files;
-		if (!FProtoBridgeUtils::FindProtoFiles(Source, Mapping.bRecursive, Mapping.Blacklist, Files))
+		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
 		{
-			Plan.bIsValid = false;
-			Plan.ErrorMessage = FString::Printf(TEXT("Failed to scan directory: %s"), *Source);
-			return Plan;
-		}
-
-		if (Files.Num() > 0)
-		{
-			FString Args, ArgFile;
-			if (FProtoBridgeUtils::BuildCommandArguments(Config, Source, Dest, Files, Args, ArgFile))
 			{
-				FCompilationTask Task;
-				Task.ProtocPath = Protoc;
-				Task.SourceDir = Source;
-				Task.DestinationDir = Dest;
-				Task.Arguments = Args;
-				Task.TempArgFilePath = ArgFile;
-				Plan.Tasks.Add(Task);
+				FScopeLock Lock(&Self->SessionMutex);
+				Self->bIsActive = false;
+				Self->Executor.Reset();
 			}
-			else
-			{
-				Plan.bIsValid = false;
-				Plan.ErrorMessage = TEXT("Failed to build arguments (possible path injection)");
-				return Plan;
-			}
+			Self->FinishedDelegate.Broadcast(bSuccess, Message);
 		}
-	}
-	return Plan;
+	});
 }

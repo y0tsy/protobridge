@@ -1,7 +1,7 @@
 ﻿#include "Services/ProtoBridgeCompilerService.h"
 #include "Services/CompilationSession.h"
 #include "Async/Async.h"
-#include "Misc/CoreDelegates.h"
+#include "HAL/PlatformTime.h"
 
 FProtoBridgeCompilerService::FProtoBridgeCompilerService()
 {
@@ -44,11 +44,8 @@ bool FProtoBridgeCompilerService::IsCompiling() const
 
 void FProtoBridgeCompilerService::OnSessionStarted()
 {
-	AsyncTask(ENamedThreads::GameThread, [this]()
-	{
-		CompilationStartedDelegate.Broadcast();
-		LogMessageDelegate.Broadcast(TEXT("--- Compilation Started ---"), ELogVerbosity::Log);
-	});
+	CompilationStartedDelegate.Broadcast();
+	LogMessageDelegate.Broadcast(TEXT("--- Compilation Started ---"), ELogVerbosity::Log);
 
 	if (!LogTickerHandle.IsValid())
 	{
@@ -58,7 +55,7 @@ void FProtoBridgeCompilerService::OnSessionStarted()
 				ProcessLogQueue();
 				return true;
 			}), 
-			0.05f
+			0.0f
 		);
 	}
 }
@@ -71,30 +68,32 @@ void FProtoBridgeCompilerService::OnSessionLog(const FString& Msg)
 
 void FProtoBridgeCompilerService::OnSessionFinished(bool bSuccess, const FString& Msg)
 {
-	AsyncTask(ENamedThreads::GameThread, [this, bSuccess, Msg]()
+	ProcessLogQueue();
+	if (LogTickerHandle.IsValid())
 	{
-		ProcessLogQueue();
-		if (LogTickerHandle.IsValid())
-		{
-			FTSTicker::GetCoreTicker().RemoveTicker(LogTickerHandle);
-			LogTickerHandle.Reset();
-		}
+		FTSTicker::GetCoreTicker().RemoveTicker(LogTickerHandle);
+		LogTickerHandle.Reset();
+	}
 
-		CompilationFinishedDelegate.Broadcast(bSuccess, Msg);
-		CurrentSession.Reset();
-	});
+	CompilationFinishedDelegate.Broadcast(bSuccess, Msg);
+	CurrentSession.Reset();
 }
 
 void FProtoBridgeCompilerService::ProcessLogQueue()
 {
-	TArray<FString> TempQueue;
-	{
-		FScopeLock Lock(&LogMutex);
-		TempQueue = MoveTemp(LogQueue);
-	}
+	double StartTime = FPlatformTime::Seconds();
+	const double MaxExecutionTime = 0.015; 
 
-	for (const FString& Msg : TempQueue)
+	while (true)
 	{
+		FString Msg;
+		{
+			FScopeLock Lock(&LogMutex);
+			if (LogQueue.IsEmpty()) break;
+			Msg = LogQueue[0];
+			LogQueue.RemoveAt(0);
+		}
+
 		ELogVerbosity::Type Verbosity = ELogVerbosity::Display;
 		if (Msg.Contains(TEXT("error"), ESearchCase::IgnoreCase))
 		{
@@ -105,5 +104,10 @@ void FProtoBridgeCompilerService::ProcessLogQueue()
 			Verbosity = ELogVerbosity::Warning;
 		}
 		LogMessageDelegate.Broadcast(Msg, Verbosity);
+
+		if ((FPlatformTime::Seconds() - StartTime) > MaxExecutionTime)
+		{
+			break;
+		}
 	}
 }

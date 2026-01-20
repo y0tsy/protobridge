@@ -21,7 +21,8 @@ public:
 
 private:
 	void RunInternal(const FProtoBridgeConfiguration& Config);
-	FCompilationPlan GeneratePlan(const FProtoBridgeConfiguration& Config);
+	void DispatchLog(const FString& Message);
+	void DispatchFinished(bool bSuccess, const FString& Message);
 	
 	TSharedPtr<FTaskExecutor> Executor;
 	mutable FCriticalSection SessionMutex;

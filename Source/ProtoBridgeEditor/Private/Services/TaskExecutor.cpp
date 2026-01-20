@@ -59,54 +59,76 @@ bool FTaskExecutor::IsRunning() const
 
 void FTaskExecutor::StartNextTask()
 {
-	while (true)
+	FCompilationTask TaskToRun;
+	TSharedPtr<FMonitoredProcess> NewProcess;
+	bool bLaunchSuccess = false;
+	bool bShouldFinish = false;
+	bool bWasCancelled = false;
+
 	{
-		FCompilationTask TaskToRun;
+		FScopeLock Lock(&StateMutex);
 		
+		if (bIsCancelled)
 		{
-			FScopeLock Lock(&StateMutex);
-			if (bIsCancelled)
-			{
-				bIsRunning = false;
-				FinishedDelegate.Broadcast(false, TEXT("Operation canceled"));
-				return;
-			}
-
-			if (Queue.Num() == 0)
-			{
-				bIsRunning = false;
-				FString Msg = bHasErrors ? TEXT("Finished with errors") : TEXT("Success");
-				FinishedDelegate.Broadcast(!bHasErrors, Msg);
-				return;
-			}
-
-			TaskToRun = Queue[0];
-			Queue.RemoveAt(0);
-			CurrentTask = TaskToRun;
+			bIsRunning = false;
+			bWasCancelled = true;
 		}
-
-		OutputDelegate.Broadcast(FString::Printf(TEXT("Compiling: %s"), *TaskToRun.SourceDir));
-
-		CurrentProcess = MakeShared<FMonitoredProcess>(TaskToRun.ProtocPath, TaskToRun.Arguments, true);
-		CurrentProcess->OnOutput().BindSP(this, &FTaskExecutor::HandleOutput);
-		CurrentProcess->OnCompleted().BindSP(this, &FTaskExecutor::HandleCompleted);
-
-		if (CurrentProcess->Launch())
+		else if (Queue.Num() == 0)
 		{
-			return; 
+			bIsRunning = false;
+			bShouldFinish = true;
 		}
 		else
 		{
-			OutputDelegate.Broadcast(TEXT("Failed to launch protoc process"));
+			TaskToRun = Queue[0];
+			Queue.RemoveAt(0);
+			CurrentTask = TaskToRun;
+
+			NewProcess = MakeShared<FMonitoredProcess>(TaskToRun.ProtocPath, TaskToRun.Arguments, true);
+			NewProcess->OnOutput().BindSP(this, &FTaskExecutor::HandleOutput);
+			NewProcess->OnCompleted().BindSP(this, &FTaskExecutor::HandleCompleted);
 			
+			CurrentProcess = NewProcess;
+
+			if (NewProcess->Launch())
 			{
-				FScopeLock Lock(&StateMutex);
+				bLaunchSuccess = true;
+			}
+			else
+			{
 				bHasErrors = true;
 				CurrentProcess.Reset();
+				Queue.Empty(); 
 			}
-			
-			CleanupTask(TaskToRun);
 		}
+	}
+
+	if (bWasCancelled)
+	{
+		FinishedDelegate.Broadcast(false, TEXT("Operation canceled"));
+		return;
+	}
+
+	if (bShouldFinish)
+	{
+		FString Msg = bHasErrors ? TEXT("Finished with errors") : TEXT("Success");
+		FinishedDelegate.Broadcast(!bHasErrors, Msg);
+		return;
+	}
+
+	OutputDelegate.Broadcast(FString::Printf(TEXT("Compiling: %s"), *TaskToRun.SourceDir));
+
+	if (!bLaunchSuccess)
+	{
+		OutputDelegate.Broadcast(TEXT("CRITICAL ERROR: Failed to launch protoc process. Aborting queue."));
+		CleanupTask(TaskToRun);
+		
+		{
+			FScopeLock Lock(&StateMutex);
+			bIsRunning = false;
+		}
+		
+		FinishedDelegate.Broadcast(false, TEXT("Failed to launch compiler process"));
 	}
 }
 
