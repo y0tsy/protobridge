@@ -54,29 +54,48 @@ FString FProtoBridgePathHelpers::ResolvePath(const FString& InPath, const FProto
 
 FString FProtoBridgePathHelpers::ResolveProtocPath(const FProtoBridgeEnvironmentContext& Context)
 {
-	if (!Context.ProtocPath.IsEmpty() && IFileManager::Get().FileExists(*Context.ProtocPath))
+	if (!Context.ProtocPath.IsEmpty())
 	{
-		FString Path = Context.ProtocPath;
-		NormalizePath(Path);
-		return Path;
+		if (IFileManager::Get().FileExists(*Context.ProtocPath))
+		{
+			FString Path = Context.ProtocPath;
+			NormalizePath(Path);
+			UE_LOG(LogProtoBridge, Display, TEXT("Using custom Protoc path: %s"), *Path);
+			return Path;
+		}
+		UE_LOG(LogProtoBridge, Warning, TEXT("Custom Protoc path specified but file not found: %s"), *Context.ProtocPath);
 	}
 	
+	UE_LOG(LogProtoBridge, Display, TEXT("Attempting to resolve Protoc from Plugin Directory: %s"), *Context.PluginDirectory);
 	return FindBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::ProtocExecutableName);
 }
 
 FString FProtoBridgePathHelpers::ResolvePluginPath(const FProtoBridgeEnvironmentContext& Context)
 {
-	if (!Context.PluginPath.IsEmpty() && IFileManager::Get().FileExists(*Context.PluginPath))
+	if (!Context.PluginPath.IsEmpty())
 	{
-		FString Path = Context.PluginPath;
-		NormalizePath(Path);
-		return Path;
+		if (IFileManager::Get().FileExists(*Context.PluginPath))
+		{
+			FString Path = Context.PluginPath;
+			NormalizePath(Path);
+			UE_LOG(LogProtoBridge, Display, TEXT("Using custom Plugin path: %s"), *Path);
+			return Path;
+		}
+		UE_LOG(LogProtoBridge, Warning, TEXT("Custom Plugin path specified but file not found: %s"), *Context.PluginPath);
 	}
+	
+	UE_LOG(LogProtoBridge, Display, TEXT("Attempting to resolve Plugin Binary from Plugin Directory: %s"), *Context.PluginDirectory);
 	return FindBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::PluginExecutableName);
 }
 
 FString FProtoBridgePathHelpers::FindBinaryPath(const FString& BaseDir, const FString& BinaryName)
 {
+	if (BaseDir.IsEmpty())
+	{
+		UE_LOG(LogProtoBridge, Error, TEXT("FindBinaryPath called with empty BaseDir for binary: %s"), *BinaryName);
+		return FString();
+	}
+
 	TArray<FString> SearchPaths;
 	SearchPaths.Add(BaseDir / TEXT("Source") / TEXT("ThirdParty") / TEXT("bin"));
 	SearchPaths.Add(BaseDir / TEXT("Binaries") / TEXT("ThirdParty"));
@@ -95,20 +114,32 @@ FString FProtoBridgePathHelpers::FindBinaryPath(const FString& BaseDir, const FS
 	for (const FString& Path : SearchPaths)
 	{
 		FString FullPath = Path / Platform / BinaryName;
+		
 		if (IFileManager::Get().FileExists(*FullPath))
 		{
 			NormalizePath(FullPath);
+			UE_LOG(LogProtoBridge, Display, TEXT("Found binary at: %s"), *FullPath);
 			return FullPath;
+		}
+		else
+		{
+			UE_LOG(LogProtoBridge, Verbose, TEXT("Binary not found at: %s"), *FullPath);
 		}
 		
 		FullPath = Path / BinaryName;
 		if (IFileManager::Get().FileExists(*FullPath))
 		{
 			NormalizePath(FullPath);
+			UE_LOG(LogProtoBridge, Display, TEXT("Found binary at: %s"), *FullPath);
 			return FullPath;
+		}
+		else
+		{
+			UE_LOG(LogProtoBridge, Verbose, TEXT("Binary not found at: %s"), *FullPath);
 		}
 	}
 
+	UE_LOG(LogProtoBridge, Warning, TEXT("Failed to find binary '%s' in %d search paths based on %s"), *BinaryName, SearchPaths.Num(), *BaseDir);
 	return FString();
 }
 
