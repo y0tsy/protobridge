@@ -122,7 +122,23 @@ void FTaskExecutor::TryLaunchProcess()
 
 	for (auto& Proc : ProcessesToLaunch)
 	{
-		if (!Proc->Launch())
+		if (Proc->Launch())
+		{
+			bool bMustKill = false;
+			{
+				FScopeLock Lock(&StateMutex);
+				if (bIsCancelled || bIsTearingDown || !ActiveProcesses.Contains(Proc))
+				{
+					bMustKill = true;
+				}
+			}
+
+			if (bMustKill)
+			{
+				Proc->Cancel(true);
+			}
+		}
+		else
 		{
 			bool bWasEmpty = false;
 			{
@@ -158,6 +174,7 @@ void FTaskExecutor::Cancel()
 		bIsCancelled = true;
 		
 		TaskQueue.Empty();
+		
 		ToCancel = ActiveProcesses;
 	}
 
@@ -209,16 +226,25 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 
 	if (bFound)
 	{
-		if (ReturnCode == 0)
+		TWeakPtr<FTaskExecutor> WeakSelf = AsShared();
+		bool bWasCancelled = bIsCancelled;
+
+		AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [WeakSelf, CompletedTask, ReturnCode, bWasCancelled]()
 		{
-			FProtoBridgeFileManager::DeleteFile(CompletedTask.TempArgFilePath);
-		}
-		else if (!bIsCancelled) 
-		{
-			FProtoBridgeEventBus::Get().BroadcastLog(FString::Printf(TEXT("Process failed with code %d. Args: %s"), ReturnCode, *CompletedTask.TempArgFilePath), ELogVerbosity::Error);
-		}
-		
-		StartNextTask();
+			if (ReturnCode == 0)
+			{
+				FProtoBridgeFileManager::DeleteFile(CompletedTask.TempArgFilePath);
+			}
+			else if (!bWasCancelled) 
+			{
+				FProtoBridgeEventBus::Get().BroadcastLog(FString::Printf(TEXT("Process failed with code %d. Args: %s"), ReturnCode, *CompletedTask.TempArgFilePath), ELogVerbosity::Error);
+			}
+
+			if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
+			{
+				Self->StartNextTask();
+			}
+		});
 	}
 }
 
