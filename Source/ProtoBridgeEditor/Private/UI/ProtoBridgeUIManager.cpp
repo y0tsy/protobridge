@@ -30,9 +30,17 @@ void FProtoBridgeUIManager::Initialize()
 
 	if (TSharedPtr<IProtoBridgeService> PinnedService = Service.Pin())
 	{
-		PinnedService->OnCompilationStarted().AddSP(this, &FProtoBridgeUIManager::HandleCompilationStarted);
-		PinnedService->OnCompilationFinished().AddSP(this, &FProtoBridgeUIManager::HandleCompilationFinished);
-		PinnedService->OnLogMessage().AddSP(this, &FProtoBridgeUIManager::HandleLogMessage);
+		StartedHandle = PinnedService->RegisterOnCompilationStarted(
+			FOnProtoBridgeCompilationStarted::FDelegate::CreateSP(this, &FProtoBridgeUIManager::HandleCompilationStarted)
+		);
+		
+		FinishedHandle = PinnedService->RegisterOnCompilationFinished(
+			FOnProtoBridgeCompilationFinished::FDelegate::CreateSP(this, &FProtoBridgeUIManager::HandleCompilationFinished)
+		);
+		
+		LogHandle = PinnedService->RegisterOnLogMessage(
+			FOnProtoBridgeLogMessage::FDelegate::CreateSP(this, &FProtoBridgeUIManager::HandleLogMessage)
+		);
 	}
 }
 
@@ -42,6 +50,25 @@ void FProtoBridgeUIManager::Shutdown()
 	{
 		FMessageLogModule& MessageLogModule = FModuleManager::GetModuleChecked<FMessageLogModule>("MessageLog");
 		MessageLogModule.UnregisterLogListing(LogCategoryName);
+	}
+
+	if (TSharedPtr<IProtoBridgeService> PinnedService = Service.Pin())
+	{
+		if (StartedHandle.IsValid())
+		{
+			PinnedService->UnregisterOnCompilationStarted(StartedHandle);
+			StartedHandle.Reset();
+		}
+		if (FinishedHandle.IsValid())
+		{
+			PinnedService->UnregisterOnCompilationFinished(FinishedHandle);
+			FinishedHandle.Reset();
+		}
+		if (LogHandle.IsValid())
+		{
+			PinnedService->UnregisterOnLogMessage(LogHandle);
+			LogHandle.Reset();
+		}
 	}
 }
 

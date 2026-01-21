@@ -1,11 +1,8 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "ProtoBridgeTypes.h"
-
-DECLARE_MULTICAST_DELEGATE(FOnProtoBridgeCompilationStarted);
-DECLARE_MULTICAST_DELEGATE_TwoParams(FOnProtoBridgeCompilationFinished, bool, const FString&);
-DECLARE_MULTICAST_DELEGATE_TwoParams(FOnProtoBridgeLogMessage, const FString&, ELogVerbosity::Type);
+#include "ProtoBridgeDelegates.h"
+#include "ProtoBridgeConfiguration.h"
 
 class PROTOBRIDGEEDITOR_API IProtoBridgeService
 {
@@ -17,7 +14,12 @@ public:
 	virtual void WaitForCompletion() = 0;
 	virtual bool IsCompiling() const = 0;
 
-	virtual FOnProtoBridgeCompilationStarted& OnCompilationStarted() = 0;
-	virtual FOnProtoBridgeCompilationFinished& OnCompilationFinished() = 0;
-	virtual FOnProtoBridgeLogMessage& OnLogMessage() = 0;
+	virtual FDelegateHandle RegisterOnCompilationStarted(const FOnProtoBridgeCompilationStarted::FDelegate& Delegate) = 0;
+	virtual void UnregisterOnCompilationStarted(FDelegateHandle Handle) = 0;
+
+	virtual FDelegateHandle RegisterOnCompilationFinished(const FOnProtoBridgeCompilationFinished::FDelegate& Delegate) = 0;
+	virtual void UnregisterOnCompilationFinished(FDelegateHandle Handle) = 0;
+
+	virtual FDelegateHandle RegisterOnLogMessage(const FOnProtoBridgeLogMessage::FDelegate& Delegate) = 0;
+	virtual void UnregisterOnLogMessage(FDelegateHandle Handle) = 0;
 };

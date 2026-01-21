@@ -5,21 +5,26 @@
 #include "HAL/PlatformProcess.h"
 #include "Internationalization/Regex.h"
 
-FString FProtoBridgeUtils::ResolvePath(const FString& InPath, const FProtoBridgeEnvironmentContext& Context)
+FString FProtoBridgePathHelpers::ResolvePath(const FString& InPath, const FProtoBridgeEnvironmentContext& Context)
 {
-	FString Result = InPath;
+	if (InPath.IsEmpty()) return FString();
+
+	TStringBuilder<1024> PathBuilder;
+	PathBuilder.Append(InPath);
+
+	FString PathStr = PathBuilder.ToString();
 	
-	if (Result.Contains(FProtoBridgeDefs::TokenProjectDir))
+	if (PathStr.Contains(FProtoBridgeDefs::TokenProjectDir))
 	{
-		Result = Result.Replace(*FProtoBridgeDefs::TokenProjectDir, *Context.ProjectDirectory);
+		PathStr = PathStr.Replace(*FProtoBridgeDefs::TokenProjectDir, *Context.ProjectDirectory);
 	}
-	if (Result.Contains(FProtoBridgeDefs::TokenPluginDir))
+	if (PathStr.Contains(FProtoBridgeDefs::TokenPluginDir))
 	{
-		Result = Result.Replace(*FProtoBridgeDefs::TokenPluginDir, *Context.PluginDirectory);
+		PathStr = PathStr.Replace(*FProtoBridgeDefs::TokenPluginDir, *Context.PluginDirectory);
 	}
 
 	static const FRegexPattern PluginPattern(FProtoBridgeDefs::TokenPluginMacro + TEXT("([a-zA-Z0-9_]+)\\}"));
-	FRegexMatcher Matcher(PluginPattern, Result);
+	FRegexMatcher Matcher(PluginPattern, PathStr);
 
 	while (Matcher.FindNext())
 	{
@@ -28,18 +33,18 @@ FString FProtoBridgeUtils::ResolvePath(const FString& InPath, const FProtoBridge
 
 		if (const FString* FoundPath = Context.PluginLocations.Find(PluginName))
 		{
-			Result = Result.Replace(*Placeholder, **FoundPath);
+			PathStr = PathStr.Replace(*Placeholder, **FoundPath);
 		}
 	}
 
-	FString FullPath = FPaths::ConvertRelativePathToFull(Result);
+	FString FullPath = FPaths::ConvertRelativePathToFull(PathStr);
 	FPaths::CollapseRelativeDirectories(FullPath);
 	FPaths::NormalizeFilename(FullPath);
 	
 	return FullPath;
 }
 
-FString FProtoBridgeUtils::ResolveProtocPath(const FProtoBridgeEnvironmentContext& Context)
+FString FProtoBridgePathHelpers::ResolveProtocPath(const FProtoBridgeEnvironmentContext& Context)
 {
 	if (!Context.ProtocPath.IsEmpty() && IFileManager::Get().FileExists(*Context.ProtocPath))
 	{
@@ -48,7 +53,7 @@ FString FProtoBridgeUtils::ResolveProtocPath(const FProtoBridgeEnvironmentContex
 	return GetPlatformBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::ProtocExecutableName);
 }
 
-FString FProtoBridgeUtils::ResolvePluginPath(const FProtoBridgeEnvironmentContext& Context)
+FString FProtoBridgePathHelpers::ResolvePluginPath(const FProtoBridgeEnvironmentContext& Context)
 {
 	if (!Context.PluginPath.IsEmpty() && IFileManager::Get().FileExists(*Context.PluginPath))
 	{
@@ -57,10 +62,11 @@ FString FProtoBridgeUtils::ResolvePluginPath(const FProtoBridgeEnvironmentContex
 	return GetPlatformBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::PluginExecutableName);
 }
 
-FString FProtoBridgeUtils::GetPlatformBinaryPath(const FString& BaseDir, const FString& ExecName)
+FString FProtoBridgePathHelpers::GetPlatformBinaryPath(const FString& BaseDir, const FString& ExecName)
 {
 	const FString PlatformSubDir = FPlatformProcess::GetBinariesSubdirectory();
 	FString Extension = TEXT("");
+
 #if PLATFORM_WINDOWS
 	Extension = TEXT(".exe");
 #endif
@@ -77,7 +83,22 @@ FString FProtoBridgeUtils::GetPlatformBinaryPath(const FString& BaseDir, const F
 	return FPaths::ConvertRelativePathToFull(Path);
 }
 
-bool FProtoBridgeUtils::FindProtoFiles(const FString& SourceDir, bool bRecursive, const TArray<FString>& Blacklist, TArray<FString>& OutFiles)
+bool FProtoBridgePathHelpers::IsPathSafe(const FString& InPath, const FProtoBridgeEnvironmentContext& Context)
+{
+	FString FullPath = FPaths::ConvertRelativePathToFull(InPath);
+	FPaths::NormalizeFilename(FullPath);
+
+	if (FPaths::IsUnderDirectory(FullPath, FPaths::ConvertRelativePathToFull(Context.ProjectDirectory))) return true;
+	if (FPaths::IsUnderDirectory(FullPath, FPaths::ConvertRelativePathToFull(Context.PluginDirectory))) return true;
+	
+	for (const auto& Pair : Context.PluginLocations)
+	{
+		if (FPaths::IsUnderDirectory(FullPath, FPaths::ConvertRelativePathToFull(Pair.Value))) return true;
+	}
+	return false;
+}
+
+bool FProtoBridgeFileScanner::FindProtoFiles(const FString& SourceDir, bool bRecursive, const TArray<FString>& Blacklist, TArray<FString>& OutFiles)
 {
 	if (!IFileManager::Get().DirectoryExists(*SourceDir))
 	{
@@ -119,24 +140,9 @@ bool FProtoBridgeUtils::FindProtoFiles(const FString& SourceDir, bool bRecursive
 		}
 		else
 		{
-			OutFiles[i] = NormalizedFile;
+			OutFiles[i] = MoveTemp(NormalizedFile);
 		}
 	}
 
 	return true;
-}
-
-bool FProtoBridgeUtils::IsPathSafe(const FString& InPath, const FProtoBridgeEnvironmentContext& Context)
-{
-	FString FullPath = FPaths::ConvertRelativePathToFull(InPath);
-	FPaths::NormalizeFilename(FullPath);
-
-	if (FPaths::IsUnderDirectory(FullPath, FPaths::ConvertRelativePathToFull(Context.ProjectDirectory))) return true;
-	if (FPaths::IsUnderDirectory(FullPath, FPaths::ConvertRelativePathToFull(Context.PluginDirectory))) return true;
-	
-	for (const auto& Pair : Context.PluginLocations)
-	{
-		if (FPaths::IsUnderDirectory(FullPath, FPaths::ConvertRelativePathToFull(Pair.Value))) return true;
-	}
-	return false;
 }

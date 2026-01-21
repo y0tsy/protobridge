@@ -21,4 +21,8 @@ private:
 
 	TWeakPtr<IProtoBridgeService> Service;
 	FName LogCategoryName;
+
+	FDelegateHandle StartedHandle;
+	FDelegateHandle FinishedHandle;
+	FDelegateHandle LogHandle;
 };

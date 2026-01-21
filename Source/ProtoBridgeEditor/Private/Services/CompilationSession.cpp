@@ -27,12 +27,12 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 	FScopeLock Lock(&SessionMutex);
 	if (bIsActive) return;
 	bIsActive = true;
-	
+
 	if (WorkFinishedEvent)
 	{
 		WorkFinishedEvent->Reset();
 	}
-
+	
 	StartedDelegate.Broadcast();
 
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
@@ -41,7 +41,7 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 	{
 		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
 		{
-			Self->RunInternal(Config);
+			Self->RunDiscovery(Config);
 		}
 	});
 }
@@ -63,18 +63,15 @@ void FCompilationSession::Cancel()
 
 void FCompilationSession::WaitForCompletion()
 {
-	if (WorkFinishedEvent)
+	bool bShouldWait = false;
 	{
-		bool bShouldWait = false;
-		{
-			FScopeLock Lock(&SessionMutex);
-			bShouldWait = bIsActive;
-		}
+		FScopeLock Lock(&SessionMutex);
+		bShouldWait = bIsActive;
+	}
 
-		if (bShouldWait)
-		{
-			WorkFinishedEvent->Wait();
-		}
+	if (bShouldWait && WorkFinishedEvent)
+	{
+		WorkFinishedEvent->Wait();
 	}
 }
 
@@ -84,7 +81,7 @@ bool FCompilationSession::IsRunning() const
 	return bIsActive;
 }
 
-void FCompilationSession::RunInternal(const FProtoBridgeConfiguration& Config)
+void FCompilationSession::RunDiscovery(const FProtoBridgeConfiguration& Config)
 {
 	DispatchLog(TEXT("Starting discovery..."));
 	
@@ -104,17 +101,15 @@ void FCompilationSession::RunInternal(const FProtoBridgeConfiguration& Config)
 
 	DispatchLog(FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num()));
 
+	FScopeLock Lock(&SessionMutex);
+	if (bIsActive)
 	{
-		FScopeLock Lock(&SessionMutex);
-		if (bIsActive)
-		{
-			Executor = MakeShared<FTaskExecutor>();
-			
-			Executor->OnOutput().AddSP(this, &FCompilationSession::DispatchLog);
-			Executor->OnFinished().AddSP(this, &FCompilationSession::OnExecutorFinishedInternal);
-			
-			Executor->Execute(Plan.Tasks);
-		}
+		Executor = MakeShared<FTaskExecutor>(Config.TimeoutSeconds);
+		
+		Executor->OnOutput().AddSP(this, &FCompilationSession::DispatchLog);
+		Executor->OnFinished().AddSP(this, &FCompilationSession::OnExecutorFinishedInternal);
+		
+		Executor->Execute(MoveTemp(Plan.Tasks));
 	}
 }
 

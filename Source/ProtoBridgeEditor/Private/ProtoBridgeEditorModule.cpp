@@ -3,12 +3,15 @@
 #include "ProtoBridgeDefs.h"
 #include "Interfaces/IProtoBridgeService.h"
 #include "Services/ProtoBridgeCompilerService.h"
+#include "Services/ProtoBridgeUtils.h"
 #include "UI/ProtoBridgeUIManager.h"
 #include "Settings/ProtoBridgeSettings.h"
+#include "ProtoBridgeConfiguration.h"
 #include "ToolMenus.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/MessageDialog.h"
 
 #define LOCTEXT_NAMESPACE "FProtoBridgeEditorModule"
 
@@ -17,8 +20,6 @@ void FProtoBridgeEditorModule::StartupModule()
 	FProtoBridgeEditorStyle::Initialize();
 	FProtoBridgeEditorStyle::ReloadTextures();
 	
-	CleanupTempFiles();
-
 	CompilerService = MakeShared<FProtoBridgeCompilerService>();
 	UIManager = MakeShared<FProtoBridgeUIManager>(CompilerService);
 	UIManager->Initialize();
@@ -50,20 +51,6 @@ void FProtoBridgeEditorModule::ShutdownModule()
 TSharedPtr<IProtoBridgeService> FProtoBridgeEditorModule::GetService() const
 {
 	return CompilerService;
-}
-
-void FProtoBridgeEditorModule::CleanupTempFiles()
-{
-	FString SafeBaseDir = FPaths::ProjectSavedDir();
-	FString TempDir = SafeBaseDir / FProtoBridgeDefs::PluginName / FProtoBridgeDefs::TempFolder;
-	
-	if (FPaths::IsUnderDirectory(TempDir, SafeBaseDir))
-	{
-		if (IFileManager::Get().DirectoryExists(*TempDir))
-		{
-			IFileManager::Get().DeleteDirectory(*TempDir, false, true);
-		}
-	}
 }
 
 void FProtoBridgeEditorModule::RegisterMenus()
@@ -99,6 +86,7 @@ void FProtoBridgeEditorModule::OnCompileButtonClicked()
 		Config.Environment.PluginPath = Settings->CustomPluginPath.FilePath;
 		Config.Mappings = Settings->Mappings;
 		Config.ApiMacro = Settings->ApiMacroName;
+		Config.TimeoutSeconds = Settings->TimeoutSeconds;
 
 		TSharedPtr<IPlugin> SelfPlugin = IPluginManager::Get().FindPlugin(FProtoBridgeDefs::PluginName);
 		if (SelfPlugin.IsValid())

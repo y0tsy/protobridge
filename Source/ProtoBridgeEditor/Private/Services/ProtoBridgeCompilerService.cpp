@@ -20,8 +20,11 @@ FProtoBridgeCompilerService::~FProtoBridgeCompilerService()
 
 void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Config)
 {
-	Cancel();
-	WaitForCompletion();
+	if (IsCompiling())
+	{
+		LogMessageDelegate.Broadcast(TEXT("Compilation is already in progress."), ELogVerbosity::Warning);
+		return;
+	}
 
 	CurrentSession = MakeShared<FCompilationSession>();
 	CurrentSession->OnStarted().AddSP(this, &FProtoBridgeCompilerService::OnSessionStarted);
@@ -44,7 +47,6 @@ void FProtoBridgeCompilerService::WaitForCompletion()
 	if (CurrentSession.IsValid())
 	{
 		CurrentSession->WaitForCompletion();
-		CurrentSession.Reset();
 	}
 }
 
@@ -53,56 +55,82 @@ bool FProtoBridgeCompilerService::IsCompiling() const
 	return CurrentSession.IsValid() && CurrentSession->IsRunning();
 }
 
+FDelegateHandle FProtoBridgeCompilerService::RegisterOnCompilationStarted(const FOnProtoBridgeCompilationStarted::FDelegate& Delegate)
+{
+	return CompilationStartedDelegate.Add(Delegate);
+}
+
+void FProtoBridgeCompilerService::UnregisterOnCompilationStarted(FDelegateHandle Handle)
+{
+	CompilationStartedDelegate.Remove(Handle);
+}
+
+FDelegateHandle FProtoBridgeCompilerService::RegisterOnCompilationFinished(const FOnProtoBridgeCompilationFinished::FDelegate& Delegate)
+{
+	return CompilationFinishedDelegate.Add(Delegate);
+}
+
+void FProtoBridgeCompilerService::UnregisterOnCompilationFinished(FDelegateHandle Handle)
+{
+	CompilationFinishedDelegate.Remove(Handle);
+}
+
+FDelegateHandle FProtoBridgeCompilerService::RegisterOnLogMessage(const FOnProtoBridgeLogMessage::FDelegate& Delegate)
+{
+	return LogMessageDelegate.Add(Delegate);
+}
+
+void FProtoBridgeCompilerService::UnregisterOnLogMessage(FDelegateHandle Handle)
+{
+	LogMessageDelegate.Remove(Handle);
+}
+
 void FProtoBridgeCompilerService::OnSessionStarted()
 {
 	CompilationStartedDelegate.Broadcast();
 	LogMessageDelegate.Broadcast(TEXT("--- Compilation Started ---"), ELogVerbosity::Log);
-
-	if (!LogTickerHandle.IsValid())
-	{
-		LogTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
-			FTickerDelegate::CreateLambda([this](float DeltaTime)
-			{
-				ProcessLogQueue();
-				return true;
-			}), 
-			0.0f
-		);
-	}
+	EnsureTickerRegistered();
 }
 
 void FProtoBridgeCompilerService::OnSessionLog(const FString& Msg)
 {
 	FScopeLock Lock(&LogMutex);
 	LogQueue.Add(Msg);
+	EnsureTickerRegistered();
 }
 
 void FProtoBridgeCompilerService::OnSessionFinished(bool bSuccess, const FString& Msg)
 {
-	ProcessLogQueue();
-	if (LogTickerHandle.IsValid())
-	{
-		FTSTicker::GetCoreTicker().RemoveTicker(LogTickerHandle);
-		LogTickerHandle.Reset();
-	}
-
+	EnsureTickerRegistered();
 	CompilationFinishedDelegate.Broadcast(bSuccess, Msg);
 }
 
-void FProtoBridgeCompilerService::ProcessLogQueue()
+void FProtoBridgeCompilerService::EnsureTickerRegistered()
+{
+	if (!LogTickerHandle.IsValid())
+	{
+		LogTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateLambda([this](float DeltaTime)
+			{
+				return ProcessLogQueue();
+			}), 
+			0.0f
+		);
+	}
+}
+
+bool FProtoBridgeCompilerService::ProcessLogQueue()
 {
 	double StartTime = FPlatformTime::Seconds();
-	
-	while (true)
-	{
-		FString Msg;
-		{
-			FScopeLock Lock(&LogMutex);
-			if (LogQueue.IsEmpty()) break;
-			Msg = LogQueue[0];
-			LogQueue.RemoveAt(0);
-		}
+	TArray<FString> Batch;
 
+	{
+		FScopeLock Lock(&LogMutex);
+		Swap(LogQueue, Batch);
+	}
+
+	for (const FString& Msg : Batch)
+	{
 		ELogVerbosity::Type Verbosity = ELogVerbosity::Display;
 		if (Msg.Contains(TEXT("error"), ESearchCase::IgnoreCase))
 		{
@@ -116,7 +144,31 @@ void FProtoBridgeCompilerService::ProcessLogQueue()
 
 		if ((FPlatformTime::Seconds() - StartTime) > FProtoBridgeDefs::LogTimeLimitSeconds)
 		{
-			break;
+			int32 ProcessedCount = (&Msg - Batch.GetData()) + 1;
+			int32 Remaining = Batch.Num() - ProcessedCount;
+			
+			if (Remaining > 0)
+			{
+				FScopeLock Lock(&LogMutex);
+				LogQueue.Insert(Batch.GetData() + ProcessedCount, Remaining, 0);
+			}
+			return true;
 		}
 	}
+
+	{
+		FScopeLock Lock(&LogMutex);
+		if (!LogQueue.IsEmpty())
+		{
+			return true;
+		}
+		
+		if (!IsCompiling())
+		{
+			LogTickerHandle.Reset();
+			return false; 
+		}
+	}
+	
+	return true;
 }

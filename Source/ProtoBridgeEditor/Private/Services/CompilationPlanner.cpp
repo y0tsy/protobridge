@@ -1,37 +1,45 @@
 ﻿#include "Services/CompilationPlanner.h"
 #include "Services/ProtoBridgeUtils.h"
 #include "Services/CommandBuilder.h"
+#include "HAL/FileManager.h"
 
 FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfiguration& Config)
 {
 	FCompilationPlan Plan;
 	Plan.bIsValid = true;
 
-	FString Protoc = FProtoBridgeUtils::ResolveProtocPath(Config.Environment);
-	FString Plugin = FProtoBridgeUtils::ResolvePluginPath(Config.Environment);
+	FString Protoc = FProtoBridgePathHelpers::ResolveProtocPath(Config.Environment);
+	FString Plugin = FProtoBridgePathHelpers::ResolvePluginPath(Config.Environment);
 
-	if (Protoc.IsEmpty() || Plugin.IsEmpty())
+	if (Protoc.IsEmpty() || !IFileManager::Get().FileExists(*Protoc))
 	{
 		Plan.bIsValid = false;
-		Plan.ErrorMessage = TEXT("Failed to resolve protoc or plugin paths");
+		Plan.ErrorMessage = FString::Printf(TEXT("Protoc executable not found at: %s"), *Protoc);
+		return Plan;
+	}
+
+	if (Plugin.IsEmpty() || !IFileManager::Get().FileExists(*Plugin))
+	{
+		Plan.bIsValid = false;
+		Plan.ErrorMessage = FString::Printf(TEXT("Plugin executable not found at: %s"), *Plugin);
 		return Plan;
 	}
 
 	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
 	{
-		FString Source = FProtoBridgeUtils::ResolvePath(Mapping.SourcePath.Path, Config.Environment);
-		FString Dest = FProtoBridgeUtils::ResolvePath(Mapping.DestinationPath.Path, Config.Environment);
+		FString Source = FProtoBridgePathHelpers::ResolvePath(Mapping.SourcePath.Path, Config.Environment);
+		FString Dest = FProtoBridgePathHelpers::ResolvePath(Mapping.DestinationPath.Path, Config.Environment);
 
 		if (Source.IsEmpty() || Dest.IsEmpty()) continue;
 
-		if (!FProtoBridgeUtils::IsPathSafe(Source, Config.Environment))
+		if (!FProtoBridgePathHelpers::IsPathSafe(Source, Config.Environment))
 		{
 			Plan.bIsValid = false;
 			Plan.ErrorMessage = FString::Printf(TEXT("Security Error: Source path is outside project or plugins: %s"), *Source);
 			return Plan;
 		}
 
-		if (!FProtoBridgeUtils::IsPathSafe(Dest, Config.Environment))
+		if (!FProtoBridgePathHelpers::IsPathSafe(Dest, Config.Environment))
 		{
 			Plan.bIsValid = false;
 			Plan.ErrorMessage = FString::Printf(TEXT("Security Error: Destination path is outside project or plugins: %s"), *Dest);
@@ -39,7 +47,7 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 		}
 
 		TArray<FString> Files;
-		if (!FProtoBridgeUtils::FindProtoFiles(Source, Mapping.bRecursive, Mapping.Blacklist, Files))
+		if (!FProtoBridgeFileScanner::FindProtoFiles(Source, Mapping.bRecursive, Mapping.Blacklist, Files))
 		{
 			Plan.bIsValid = false;
 			Plan.ErrorMessage = FString::Printf(TEXT("Failed to scan directory: %s"), *Source);
@@ -57,12 +65,12 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 				Task.DestinationDir = Dest;
 				Task.Arguments = Args;
 				Task.TempArgFilePath = TempArgFilePath;
-				Plan.Tasks.Add(Task);
+				Plan.Tasks.Add(MoveTemp(Task));
 			}
 			else
 			{
 				Plan.bIsValid = false;
-				Plan.ErrorMessage = TEXT("Failed to build arguments (unsafe characters detected)");
+				Plan.ErrorMessage = TEXT("Failed to build arguments (unsafe characters or quotes detected)");
 				return Plan;
 			}
 		}

@@ -7,15 +7,32 @@
 
 bool FCommandBuilder::Build(const FProtoBridgeConfiguration& Config, const FString& SourceDir, const FString& DestDir, const TArray<FString>& Files, FString& OutArgs, FString& OutArgFilePath)
 {
-	if (!CheckUnsafeChars(SourceDir) || !CheckUnsafeChars(DestDir))
+	FString ArgContent;
+	if (!GenerateArgumentsString(Config, SourceDir, DestDir, Files, ArgContent))
+	{
+		return false;
+	}
+
+	if (WriteArgumentFile(ArgContent, OutArgFilePath))
+	{
+		OutArgs = FString::Printf(TEXT("@\"%s\""), *OutArgFilePath);
+		return true;
+	}
+
+	return false;
+}
+
+bool FCommandBuilder::GenerateArgumentsString(const FProtoBridgeConfiguration& Config, const FString& SourceDir, const FString& DestDir, const TArray<FString>& Files, FString& OutContent)
+{
+	if (HasUnsafePathChars(SourceDir) || HasUnsafePathChars(DestDir))
 	{
 		return false;
 	}
 
 	TStringBuilder<4096> Builder;
 
-	FString ProtocPath = FProtoBridgeUtils::ResolveProtocPath(Config.Environment);
-	FString PluginPath = FProtoBridgeUtils::ResolvePluginPath(Config.Environment);
+	FString ProtocPath = FProtoBridgePathHelpers::ResolveProtocPath(Config.Environment);
+	FString PluginPath = FProtoBridgePathHelpers::ResolvePluginPath(Config.Environment);
 	FPaths::NormalizeFilename(PluginPath);
 	FPaths::NormalizeFilename(ProtocPath);
 
@@ -25,7 +42,7 @@ bool FCommandBuilder::Build(const FProtoBridgeConfiguration& Config, const FStri
 	FString NormalizedSource = SourceDir;
 	FPaths::NormalizeFilename(NormalizedSource);
 
-	if (PluginPath.Contains(TEXT("\"")) || NormalizedDest.Contains(TEXT("\"")) || NormalizedSource.Contains(TEXT("\"")))
+	if (HasUnsafePathChars(PluginPath) || HasUnsafePathChars(NormalizedDest) || HasUnsafePathChars(NormalizedSource))
 	{
 		return false;
 	}
@@ -36,7 +53,7 @@ bool FCommandBuilder::Build(const FProtoBridgeConfiguration& Config, const FStri
 
 	if (!Config.ApiMacro.IsEmpty())
 	{
-		if (!CheckUnsafeChars(Config.ApiMacro) || Config.ApiMacro.Contains(TEXT(" ")))
+		if (!IsMacroSafe(Config.ApiMacro))
 		{
 			return false;
 		}
@@ -45,7 +62,7 @@ bool FCommandBuilder::Build(const FProtoBridgeConfiguration& Config, const FStri
 
 	for (const FString& File : Files)
 	{
-		if (!CheckUnsafeChars(File))
+		if (HasUnsafePathChars(File))
 		{
 			return false;
 		}
@@ -53,31 +70,14 @@ bool FCommandBuilder::Build(const FProtoBridgeConfiguration& Config, const FStri
 		FString CleanFile = File;
 		FPaths::NormalizeFilename(CleanFile);
 		
-		if (CleanFile.Contains(TEXT("\"")))
-		{
-			return false;
-		}
-		
 		Builder.Appendf(TEXT("\"%s\"\n"), *CleanFile);
 	}
 
-	FString ArgContent = Builder.ToString();
-	if (SaveArgumentFile(ArgContent, OutArgFilePath))
-	{
-		OutArgs = FString::Printf(TEXT("@\"%s\""), *OutArgFilePath);
-		return true;
-	}
-
-	return false;
+	OutContent = Builder.ToString();
+	return true;
 }
 
-bool FCommandBuilder::CheckUnsafeChars(const FString& Str)
-{
-	const TCHAR* UnsafeChars = TEXT("\n\r");
-	return !Str.Contains(UnsafeChars); 
-}
-
-bool FCommandBuilder::SaveArgumentFile(const FString& Content, FString& OutFilePath)
+bool FCommandBuilder::WriteArgumentFile(const FString& Content, FString& OutFilePath)
 {
 	FString TempDir = FPaths::ProjectSavedDir() / FProtoBridgeDefs::PluginName / FProtoBridgeDefs::TempFolder;
 	IFileManager::Get().MakeDirectory(*TempDir, true);
@@ -91,4 +91,22 @@ bool FCommandBuilder::SaveArgumentFile(const FString& Content, FString& OutFileP
 		return true;
 	}
 	return false;
+}
+
+bool FCommandBuilder::IsMacroSafe(const FString& Str)
+{
+	for (int32 i = 0; i < Str.Len(); ++i)
+	{
+		TCHAR C = Str[i];
+		if (!FChar::IsAlnum(C) && C != TCHAR('_'))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool FCommandBuilder::HasUnsafePathChars(const FString& Str)
+{
+	return Str.Contains(TEXT("\"")); 
 }

@@ -1,7 +1,8 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "ProtoBridgeTypes.h"
+#include "ProtoBridgeCompilation.h"
+#include "ProtoBridgeConfiguration.h"
 
 class FCompilationPlanner
 {

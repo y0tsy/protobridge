@@ -1,17 +1,18 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "ProtoBridgeTypes.h"
+#include "ProtoBridgeCompilation.h"
+#include "ProtoBridgeDelegates.h"
 #include "Misc/MonitoredProcess.h"
-#include "HAL/Event.h"
+#include "Containers/Ticker.h"
 
 class FTaskExecutor : public TSharedFromThis<FTaskExecutor>
 {
 public:
-	FTaskExecutor();
+	FTaskExecutor(double InTimeoutSeconds);
 	~FTaskExecutor();
 
-	void Execute(const TArray<FCompilationTask>& Tasks);
+	void Execute(TArray<FCompilationTask>&& InTasks);
 	void Cancel();
 	
 	bool IsRunning() const;
@@ -20,21 +21,27 @@ public:
 	FOnExecutorFinished& OnFinished() { return FinishedDelegate; }
 
 private:
+	void StartNextTask();
 	void HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> ProcWeak);
 	void HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess> ProcWeak);
-	void CleanupTask(const FCompilationTask& Task);
+	bool HandleTimeout(float DeltaTime);
+	void CleanupCurrentTask();
+	void Finalize(bool bSuccess, const FString& Message);
 
 	mutable FCriticalSection StateMutex;
+	TArray<FCompilationTask> Tasks;
+	int32 CurrentTaskIndex;
 	FCompilationTask CurrentTask;
-	TSharedPtr<FMonitoredProcess> CurrentProcess;
 	
-	FEvent* TaskFinishedEvent;
-
+	TSharedPtr<FMonitoredProcess> CurrentProcess;
+	FTSTicker::FDelegateHandle TimeoutTickerHandle;
+	double TaskStartTime;
+	double TimeoutSeconds;
+	
 	FOnExecutorOutput OutputDelegate;
 	FOnExecutorFinished FinishedDelegate;
 	
 	bool bIsRunning;
 	bool bIsCancelled;
 	bool bHasErrors;
-	int32 LastReturnCode;
 };

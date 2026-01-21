@@ -1,7 +1,9 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "ProtoBridgeTypes.h"
+#include "ProtoBridgeCompilation.h"
+#include "ProtoBridgeConfiguration.h"
+#include "ProtoBridgeDelegates.h"
 #include "HAL/Event.h"
 
 class FTaskExecutor;
@@ -22,7 +24,7 @@ public:
 	FOnExecutorOutput& OnLog() { return LogDelegate; }
 
 private:
-	void RunInternal(const FProtoBridgeConfiguration& Config);
+	void RunDiscovery(const FProtoBridgeConfiguration& Config);
 	void DispatchLog(const FString& Message);
 	void DispatchFinished(bool bSuccess, const FString& Message);
 	void OnExecutorFinishedInternal(bool bSuccess, const FString& Message);
