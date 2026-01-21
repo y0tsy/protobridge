@@ -14,6 +14,6 @@ struct FCompilationTask
 struct FCompilationPlan
 {
 	TArray<FCompilationTask> Tasks;
-	bool bIsValid = false;
-	FString ErrorMessage;
+	TArray<FString> Errors;
+	bool bWasCancelled = false;
 };

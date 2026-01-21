@@ -1,17 +1,9 @@
 ﻿#include "UI/ProtoBridgeUIManager.h"
 #include "Interfaces/IProtoBridgeService.h"
-#include "Logging/MessageLog.h"
-#include "MessageLogModule.h"
-#include "Modules/ModuleManager.h"
-#include "Widgets/Notifications/SNotificationList.h"
-#include "Framework/Notifications/NotificationManager.h"
-#include "Styling/CoreStyle.h"
-
-#define LOCTEXT_NAMESPACE "FProtoBridgeUIManager"
+#include "UI/ProtoBridgeLogPresenter.h"
 
 FProtoBridgeUIManager::FProtoBridgeUIManager(TSharedPtr<IProtoBridgeService> InService)
 	: Service(InService)
-	, LogCategoryName("ProtoBridge")
 {
 }
 
@@ -22,11 +14,9 @@ FProtoBridgeUIManager::~FProtoBridgeUIManager()
 
 void FProtoBridgeUIManager::Initialize()
 {
-	FMessageLogModule& MessageLogModule = FModuleManager::LoadModuleChecked<FMessageLogModule>("MessageLog");
-	FMessageLogInitializationOptions InitOptions;
-	InitOptions.bShowPages = true;
-	InitOptions.bShowFilters = true;
-	MessageLogModule.RegisterLogListing(LogCategoryName, LOCTEXT("ProtoBridgeLogLabel", "ProtoBridge"), InitOptions);
+	TSharedPtr<FMessageLogPresenter> LogPresenter = MakeShared<FMessageLogPresenter>();
+	LogPresenter->Initialize();
+	Presenters.Add(LogPresenter);
 
 	if (TSharedPtr<IProtoBridgeService> PinnedService = Service.Pin())
 	{
@@ -46,11 +36,11 @@ void FProtoBridgeUIManager::Initialize()
 
 void FProtoBridgeUIManager::Shutdown()
 {
-	if (FModuleManager::Get().IsModuleLoaded("MessageLog"))
+	for (TSharedPtr<IProtoBridgeOutputPresenter>& Presenter : Presenters)
 	{
-		FMessageLogModule& MessageLogModule = FModuleManager::GetModuleChecked<FMessageLogModule>("MessageLog");
-		MessageLogModule.UnregisterLogListing(LogCategoryName);
+		Presenter->Shutdown();
 	}
+	Presenters.Empty();
 
 	if (TSharedPtr<IProtoBridgeService> PinnedService = Service.Pin())
 	{
@@ -74,45 +64,24 @@ void FProtoBridgeUIManager::Shutdown()
 
 void FProtoBridgeUIManager::HandleCompilationStarted()
 {
-	FMessageLog(LogCategoryName).NewPage(LOCTEXT("CompilationLogPage", "Compilation"));
+	for (const TSharedPtr<IProtoBridgeOutputPresenter>& Presenter : Presenters)
+	{
+		Presenter->OnCompilationStarted();
+	}
 }
 
 void FProtoBridgeUIManager::HandleCompilationFinished(bool bSuccess, const FString& Message)
 {
-	FNotificationInfo Info(FText::FromString(Message));
-	Info.ExpireDuration = 3.0f;
-	Info.bUseLargeFont = false;
-
-	if (bSuccess)
+	for (const TSharedPtr<IProtoBridgeOutputPresenter>& Presenter : Presenters)
 	{
-		Info.Image = FCoreStyle::Get().GetBrush(TEXT("NotificationList.SuccessImage"));
+		Presenter->OnCompilationFinished(bSuccess, Message);
 	}
-	else
-	{
-		Info.Image = FCoreStyle::Get().GetBrush(TEXT("NotificationList.FailImage"));
-		FMessageLog(LogCategoryName).Open(EMessageSeverity::Error, true);
-	}
-
-	FSlateNotificationManager::Get().AddNotification(Info);
 }
 
 void FProtoBridgeUIManager::HandleLogMessage(const FString& Message, ELogVerbosity::Type Verbosity)
 {
-	FMessageLog Logger(LogCategoryName);
-	TSharedPtr<FTokenizedMessage> TokenizedMessage;
-
-	if (Verbosity == ELogVerbosity::Error)
+	for (const TSharedPtr<IProtoBridgeOutputPresenter>& Presenter : Presenters)
 	{
-		TokenizedMessage = Logger.Error(FText::FromString(Message));
-	}
-	else if (Verbosity == ELogVerbosity::Warning)
-	{
-		TokenizedMessage = Logger.Warning(FText::FromString(Message));
-	}
-	else
-	{
-		TokenizedMessage = Logger.Info(FText::FromString(Message));
+		Presenter->OnLogMessage(Message, Verbosity);
 	}
 }
-
-#undef LOCTEXT_NAMESPACE

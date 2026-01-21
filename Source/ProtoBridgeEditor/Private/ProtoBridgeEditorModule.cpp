@@ -8,18 +8,24 @@
 #include "Settings/ProtoBridgeSettings.h"
 #include "ProtoBridgeConfiguration.h"
 #include "ToolMenus.h"
-#include "HAL/FileManager.h"
 #include "Misc/Paths.h"
 #include "Interfaces/IPluginManager.h"
-#include "Misc/MessageDialog.h"
+#include "Async/Async.h"
+#include "Services/ProtoBridgeFileManager.h"
 
 #define LOCTEXT_NAMESPACE "FProtoBridgeEditorModule"
 
 void FProtoBridgeEditorModule::StartupModule()
 {
 	FProtoBridgeEditorStyle::Initialize();
-	FProtoBridgeEditorStyle::ReloadTextures();
 	
+	FString TempDir = FPaths::ProjectSavedDir() / FProtoBridgeDefs::PluginName / FProtoBridgeDefs::TempFolder;
+	
+	Async(EAsyncExecution::ThreadPool, [TempDir]()
+	{
+		FProtoBridgeFileManager::CleanupOldTempFiles(TempDir, FProtoBridgeDefs::MaxTempFileAgeSeconds);
+	});
+
 	CompilerService = MakeShared<FProtoBridgeCompilerService>();
 	UIManager = MakeShared<FProtoBridgeUIManager>(CompilerService);
 	UIManager->Initialize();
@@ -30,8 +36,6 @@ void FProtoBridgeEditorModule::StartupModule()
 void FProtoBridgeEditorModule::ShutdownModule()
 {
 	UToolMenus::UnRegisterStartupCallback(this);
-	UToolMenus::UnregisterOwner(this);
-
 	FProtoBridgeEditorStyle::Shutdown();
 	
 	if (UIManager.IsValid())
@@ -56,7 +60,6 @@ TSharedPtr<IProtoBridgeService> FProtoBridgeEditorModule::GetService() const
 void FProtoBridgeEditorModule::RegisterMenus()
 {
 	FToolMenuOwnerScoped OwnerScoped(this);
-
 	UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.PlayToolBar");
 	FToolMenuSection& Section = Menu->FindOrAddSection("PluginTools");
 
@@ -87,6 +90,7 @@ void FProtoBridgeEditorModule::OnCompileButtonClicked()
 		Config.Mappings = Settings->Mappings;
 		Config.ApiMacro = Settings->ApiMacroName;
 		Config.TimeoutSeconds = Settings->TimeoutSeconds;
+		Config.MaxConcurrentProcesses = Settings->MaxConcurrentProcesses;
 
 		TSharedPtr<IPlugin> SelfPlugin = IPluginManager::Get().FindPlugin(FProtoBridgeDefs::PluginName);
 		if (SelfPlugin.IsValid())

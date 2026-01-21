@@ -5,11 +5,12 @@
 #include "ProtoBridgeDelegates.h"
 #include "Misc/MonitoredProcess.h"
 #include "Containers/Ticker.h"
+#include "Containers/Queue.h"
 
 class FTaskExecutor : public TSharedFromThis<FTaskExecutor>
 {
 public:
-	FTaskExecutor(double InTimeoutSeconds);
+	FTaskExecutor(double InTimeoutSeconds, int32 InMaxConcurrentProcesses);
 	~FTaskExecutor();
 
 	void Execute(TArray<FCompilationTask>&& InTasks);
@@ -25,18 +26,19 @@ private:
 	void HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> ProcWeak);
 	void HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess> ProcWeak);
 	bool HandleTimeout(float DeltaTime);
-	void CleanupCurrentTask();
 	void Finalize(bool bSuccess, const FString& Message);
 
 	mutable FCriticalSection StateMutex;
-	TArray<FCompilationTask> Tasks;
-	int32 CurrentTaskIndex;
-	FCompilationTask CurrentTask;
 	
-	TSharedPtr<FMonitoredProcess> CurrentProcess;
+	TQueue<FCompilationTask> TaskQueue;
+
+	TArray<TSharedPtr<FMonitoredProcess>> ActiveProcesses;
+	TMap<TSharedPtr<FMonitoredProcess>, FCompilationTask> ProcessToTaskMap;
+	
 	FTSTicker::FDelegateHandle TimeoutTickerHandle;
-	double TaskStartTime;
+	double SessionStartTime;
 	double TimeoutSeconds;
+	int32 MaxConcurrentProcesses;
 	
 	FOnExecutorOutput OutputDelegate;
 	FOnExecutorFinished FinishedDelegate;
@@ -44,4 +46,5 @@ private:
 	bool bIsRunning;
 	bool bIsCancelled;
 	bool bHasErrors;
+	bool bIsTearingDown;
 };

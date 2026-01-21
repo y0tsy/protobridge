@@ -4,7 +4,7 @@
 #include "ProtoBridgeCompilation.h"
 #include "ProtoBridgeConfiguration.h"
 #include "ProtoBridgeDelegates.h"
-#include "HAL/Event.h"
+#include "Async/Future.h"
 
 class FTaskExecutor;
 
@@ -25,15 +25,17 @@ public:
 
 private:
 	void RunDiscovery(const FProtoBridgeConfiguration& Config);
-	void DispatchLog(const FString& Message);
+	void DispatchLog(const FString& Message, bool bIsError = false);
 	void DispatchFinished(bool bSuccess, const FString& Message);
 	void OnExecutorFinishedInternal(bool bSuccess, const FString& Message);
 	
 	TSharedPtr<FTaskExecutor> Executor;
 	mutable FCriticalSection SessionMutex;
 	bool bIsActive;
-
-	FEvent* WorkFinishedEvent;
+	
+	TAtomic<bool> bIsTearingDown;
+	TAtomic<bool> CancellationFlag;
+	TFuture<void> WorkerFuture;
 
 	FSimpleMulticastDelegate StartedDelegate;
 	FOnExecutorFinished FinishedDelegate;

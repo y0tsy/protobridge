@@ -7,5 +7,5 @@
 class FCompilationPlanner
 {
 public:
-	static FCompilationPlan GeneratePlan(const FProtoBridgeConfiguration& Config);
+	static FCompilationPlan GeneratePlan(const FProtoBridgeConfiguration& Config, const TAtomic<bool>& CancellationFlag);
 };

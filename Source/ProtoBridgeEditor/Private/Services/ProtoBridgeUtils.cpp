@@ -4,15 +4,14 @@
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
 #include "Internationalization/Regex.h"
+#include "HAL/PlatformFileManager.h"
+#include "Interfaces/IPluginManager.h"
 
 FString FProtoBridgePathHelpers::ResolvePath(const FString& InPath, const FProtoBridgeEnvironmentContext& Context)
 {
 	if (InPath.IsEmpty()) return FString();
 
-	TStringBuilder<1024> PathBuilder;
-	PathBuilder.Append(InPath);
-
-	FString PathStr = PathBuilder.ToString();
+	FString PathStr = InPath;
 	
 	if (PathStr.Contains(FProtoBridgeDefs::TokenProjectDir))
 	{
@@ -37,112 +36,166 @@ FString FProtoBridgePathHelpers::ResolvePath(const FString& InPath, const FProto
 		}
 	}
 
-	FString FullPath = FPaths::ConvertRelativePathToFull(PathStr);
-	FPaths::CollapseRelativeDirectories(FullPath);
-	FPaths::NormalizeFilename(FullPath);
-	
-	return FullPath;
+	NormalizePath(PathStr);
+	return PathStr;
 }
 
 FString FProtoBridgePathHelpers::ResolveProtocPath(const FProtoBridgeEnvironmentContext& Context)
 {
 	if (!Context.ProtocPath.IsEmpty() && IFileManager::Get().FileExists(*Context.ProtocPath))
 	{
-		return FPaths::ConvertRelativePathToFull(Context.ProtocPath);
+		FString Path = Context.ProtocPath;
+		NormalizePath(Path);
+		return Path;
 	}
-	return GetPlatformBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::ProtocExecutableName);
+	
+	return FindBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::ProtocExecutableName);
 }
 
 FString FProtoBridgePathHelpers::ResolvePluginPath(const FProtoBridgeEnvironmentContext& Context)
 {
 	if (!Context.PluginPath.IsEmpty() && IFileManager::Get().FileExists(*Context.PluginPath))
 	{
-		return FPaths::ConvertRelativePathToFull(Context.PluginPath);
+		FString Path = Context.PluginPath;
+		NormalizePath(Path);
+		return Path;
 	}
-	return GetPlatformBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::PluginExecutableName);
+	return FindBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::PluginExecutableName);
 }
 
-FString FProtoBridgePathHelpers::GetPlatformBinaryPath(const FString& BaseDir, const FString& ExecName)
+FString FProtoBridgePathHelpers::FindBinaryPath(const FString& BaseDir, const FString& BinaryName)
 {
-	const FString PlatformSubDir = FPlatformProcess::GetBinariesSubdirectory();
-	FString Extension = TEXT("");
+	TArray<FString> SearchPaths;
+	SearchPaths.Add(BaseDir / TEXT("Source") / TEXT("ThirdParty") / TEXT("bin"));
+	SearchPaths.Add(BaseDir / TEXT("Binaries") / TEXT("ThirdParty"));
+	SearchPaths.Add(BaseDir / TEXT("Resources") / TEXT("Binaries"));
 
 #if PLATFORM_WINDOWS
-	Extension = TEXT(".exe");
+	FString Platform = TEXT("Win64");
+#elif PLATFORM_MAC
+	FString Platform = TEXT("Mac");
+#elif PLATFORM_LINUX
+	FString Platform = TEXT("Linux");
+#else
+	FString Platform = TEXT("Unknown");
 #endif
-	
-	FString Path = FPaths::Combine(
-		BaseDir, 
-		FProtoBridgeDefs::SourceFolder, 
-		FProtoBridgeDefs::ThirdPartyFolder, 
-		FProtoBridgeDefs::BinFolder, 
-		PlatformSubDir, 
-		ExecName + Extension
-	);
 
-	return FPaths::ConvertRelativePathToFull(Path);
+	for (const FString& Path : SearchPaths)
+	{
+		FString FullPath = Path / Platform / BinaryName;
+		if (IFileManager::Get().FileExists(*FullPath))
+		{
+			NormalizePath(FullPath);
+			return FullPath;
+		}
+		
+		FullPath = Path / BinaryName;
+		if (IFileManager::Get().FileExists(*FullPath))
+		{
+			NormalizePath(FullPath);
+			return FullPath;
+		}
+	}
+
+	return FString();
 }
 
-bool FProtoBridgePathHelpers::IsPathSafe(const FString& InPath, const FProtoBridgeEnvironmentContext& Context)
+bool FProtoBridgePathHelpers::IsPathSafe(const FString& RawPath, const FProtoBridgeEnvironmentContext& Context)
 {
-	FString FullPath = FPaths::ConvertRelativePathToFull(InPath);
+	FString FullPath = FPaths::ConvertRelativePathToFull(RawPath);
 	FPaths::NormalizeFilename(FullPath);
+	FPaths::CollapseRelativeDirectories(FullPath);
 
-	if (FPaths::IsUnderDirectory(FullPath, FPaths::ConvertRelativePathToFull(Context.ProjectDirectory))) return true;
-	if (FPaths::IsUnderDirectory(FullPath, FPaths::ConvertRelativePathToFull(Context.PluginDirectory))) return true;
+	if (FullPath.Contains(TEXT(".."))) return false;
+
+	if (FPaths::IsUnderDirectory(FullPath, Context.ProjectDirectory)) return true;
+	if (FPaths::IsUnderDirectory(FullPath, Context.PluginDirectory)) return true;
 	
 	for (const auto& Pair : Context.PluginLocations)
 	{
-		if (FPaths::IsUnderDirectory(FullPath, FPaths::ConvertRelativePathToFull(Pair.Value))) return true;
+		if (FPaths::IsUnderDirectory(FullPath, Pair.Value)) return true;
 	}
 	return false;
 }
 
-bool FProtoBridgeFileScanner::FindProtoFiles(const FString& SourceDir, bool bRecursive, const TArray<FString>& Blacklist, TArray<FString>& OutFiles)
+void FProtoBridgePathHelpers::NormalizePath(FString& Path)
 {
-	if (!IFileManager::Get().DirectoryExists(*SourceDir))
+	if (Path.IsEmpty()) return;
+	Path = FPaths::ConvertRelativePathToFull(Path);
+	FPaths::NormalizeFilename(Path);
+	FPaths::CollapseRelativeDirectories(Path);
+}
+
+bool FProtoBridgeFileScanner::FindProtoFiles(const FString& SourceDir, bool bRecursive, const TArray<FString>& Blacklist, TArray<FString>& OutFiles, const TAtomic<bool>& CancellationFlag)
+{
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+
+	if (!PlatformFile.DirectoryExists(*SourceDir))
 	{
 		return false;
 	}
 
+	class FScannerVisitor : public IPlatformFile::FDirectoryVisitor
+	{
+	public:
+		FScannerVisitor(TArray<FString>& InFiles, const TArray<FString>& InBlacklist, const TAtomic<bool>& InCancelFlag)
+			: Files(InFiles)
+			, Blacklist(InBlacklist)
+			, CancelFlag(InCancelFlag)
+		{}
+
+		virtual bool Visit(const TCHAR* FilenameOrDirectory, bool bIsDirectory) override
+		{
+			if (CancelFlag)
+			{
+				return false;
+			}
+
+			if (bIsDirectory)
+			{
+				return true;
+			}
+
+			FString FilePath = FilenameOrDirectory;
+			if (FPaths::GetExtension(FilePath) == FProtoBridgeDefs::ProtoExtension)
+			{
+				FProtoBridgePathHelpers::NormalizePath(FilePath);
+				
+				bool bIsBlacklisted = false;
+				for (const FString& Pattern : Blacklist)
+				{
+					if (Pattern.IsEmpty()) continue;
+					if (FilePath.MatchesWildcard(Pattern) || FPaths::GetCleanFilename(FilePath).MatchesWildcard(Pattern))
+					{
+						bIsBlacklisted = true;
+						break;
+					}
+				}
+
+				if (!bIsBlacklisted)
+				{
+					Files.Add(MoveTemp(FilePath));
+				}
+			}
+			return true;
+		}
+
+	private:
+		TArray<FString>& Files;
+		const TArray<FString>& Blacklist;
+		const TAtomic<bool>& CancelFlag;
+	};
+
+	FScannerVisitor Visitor(OutFiles, Blacklist, CancellationFlag);
+	
 	if (bRecursive)
 	{
-		IFileManager::Get().FindFilesRecursive(OutFiles, *SourceDir, *FProtoBridgeDefs::ProtoWildcard, true, false);
+		PlatformFile.IterateDirectoryRecursively(*SourceDir, Visitor);
 	}
 	else
 	{
-		IFileManager::Get().FindFiles(OutFiles, *SourceDir, *FProtoBridgeDefs::ProtoWildcard);
-		for (FString& File : OutFiles)
-		{
-			File = FPaths::Combine(SourceDir, File);
-		}
+		PlatformFile.IterateDirectory(*SourceDir, Visitor);
 	}
 
-	for (int32 i = OutFiles.Num() - 1; i >= 0; --i)
-	{
-		FString NormalizedFile = OutFiles[i];
-		FPaths::NormalizeFilename(NormalizedFile);
-		
-		bool bIsBlacklisted = false;
-		for (const FString& BlacklistPattern : Blacklist)
-		{
-			if (BlacklistPattern.IsEmpty()) continue;
-			if (NormalizedFile.MatchesWildcard(BlacklistPattern) || FPaths::GetCleanFilename(NormalizedFile).MatchesWildcard(BlacklistPattern))
-			{
-				bIsBlacklisted = true;
-				break;
-			}
-		}
-
-		if (bIsBlacklisted)
-		{
-			OutFiles.RemoveAt(i);
-		}
-		else
-		{
-			OutFiles[i] = MoveTemp(NormalizedFile);
-		}
-	}
-
-	return true;
+	return !CancellationFlag;
 }

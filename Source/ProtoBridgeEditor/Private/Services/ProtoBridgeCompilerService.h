@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Interfaces/IProtoBridgeService.h"
-#include "Containers/Ticker.h"
+#include "Services/AsyncLogDispatcher.h"
 
 class FCompilationSession;
 
@@ -31,16 +31,11 @@ private:
 	void OnSessionLog(const FString& Msg);
 	void OnSessionFinished(bool bSuccess, const FString& Msg);
 	
-	void EnsureTickerRegistered();
-	bool ProcessLogQueue();
-
+	mutable FCriticalSection ServiceMutex; 
 	TSharedPtr<FCompilationSession> CurrentSession;
 	
 	FOnProtoBridgeCompilationStarted CompilationStartedDelegate;
 	FOnProtoBridgeCompilationFinished CompilationFinishedDelegate;
-	FOnProtoBridgeLogMessage LogMessageDelegate;
-
-	FCriticalSection LogMutex;
-	TArray<FString> LogQueue;
-	FTSTicker::FDelegateHandle LogTickerHandle;
+	
+	FAsyncLogDispatcher LogDispatcher;
 };

@@ -3,23 +3,18 @@
 #include "Services/CompilationPlanner.h"
 #include "Misc/ScopeLock.h"
 #include "Async/Async.h"
-#include "HAL/PlatformProcess.h"
 
 FCompilationSession::FCompilationSession()
 	: bIsActive(false)
-	, WorkFinishedEvent(nullptr)
+	, bIsTearingDown(false)
+	, CancellationFlag(false)
 {
-	WorkFinishedEvent = FPlatformProcess::GetSynchEventFromPool(true);
 }
 
 FCompilationSession::~FCompilationSession()
 {
+	bIsTearingDown = true;
 	Cancel();
-	if (WorkFinishedEvent)
-	{
-		FPlatformProcess::ReturnSynchEventToPool(WorkFinishedEvent);
-		WorkFinishedEvent = nullptr;
-	}
 }
 
 void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
@@ -27,17 +22,13 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 	FScopeLock Lock(&SessionMutex);
 	if (bIsActive) return;
 	bIsActive = true;
-
-	if (WorkFinishedEvent)
-	{
-		WorkFinishedEvent->Reset();
-	}
+	CancellationFlag = false;
 	
 	StartedDelegate.Broadcast();
 
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
 	
-	Async(EAsyncExecution::Thread, [WeakSelf, Config]()
+	WorkerFuture = Async(EAsyncExecution::Thread, [WeakSelf, Config]()
 	{
 		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
 		{
@@ -48,10 +39,11 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 
 void FCompilationSession::Cancel()
 {
+	CancellationFlag = true;
+
 	TSharedPtr<FTaskExecutor> ExecutorToCancel;
 	{
 		FScopeLock Lock(&SessionMutex);
-		if (!bIsActive) return;
 		ExecutorToCancel = Executor;
 	}
 
@@ -63,15 +55,9 @@ void FCompilationSession::Cancel()
 
 void FCompilationSession::WaitForCompletion()
 {
-	bool bShouldWait = false;
+	if (WorkerFuture.IsValid())
 	{
-		FScopeLock Lock(&SessionMutex);
-		bShouldWait = bIsActive;
-	}
-
-	if (bShouldWait && WorkFinishedEvent)
-	{
-		WorkFinishedEvent->Wait();
+		WorkerFuture.Wait();
 	}
 }
 
@@ -85,31 +71,55 @@ void FCompilationSession::RunDiscovery(const FProtoBridgeConfiguration& Config)
 {
 	DispatchLog(TEXT("Starting discovery..."));
 	
-	FCompilationPlan Plan = FCompilationPlanner::GeneratePlan(Config);
+	FCompilationPlan Plan = FCompilationPlanner::GeneratePlan(Config, CancellationFlag);
 
-	if (!Plan.bIsValid)
+	if (Plan.bWasCancelled)
 	{
-		OnExecutorFinishedInternal(false, Plan.ErrorMessage);
+		OnExecutorFinishedInternal(false, TEXT("Operation canceled during discovery"));
 		return;
+	}
+
+	for (const FString& Err : Plan.Errors)
+	{
+		DispatchLog(FString::Printf(TEXT("Error: %s"), *Err), true);
 	}
 
 	if (Plan.Tasks.Num() == 0)
 	{
-		OnExecutorFinishedInternal(true, TEXT("No files to compile"));
+		bool bHasErrors = Plan.Errors.Num() > 0;
+		OnExecutorFinishedInternal(!bHasErrors, bHasErrors ? TEXT("Configuration errors detected") : TEXT("No files to compile"));
 		return;
 	}
 
 	DispatchLog(FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num()));
 
-	FScopeLock Lock(&SessionMutex);
-	if (bIsActive)
+	if (CancellationFlag)
 	{
-		Executor = MakeShared<FTaskExecutor>(Config.TimeoutSeconds);
-		
-		Executor->OnOutput().AddSP(this, &FCompilationSession::DispatchLog);
-		Executor->OnFinished().AddSP(this, &FCompilationSession::OnExecutorFinishedInternal);
-		
-		Executor->Execute(MoveTemp(Plan.Tasks));
+		OnExecutorFinishedInternal(false, TEXT("Canceled before execution"));
+		return;
+	}
+
+	TSharedPtr<FTaskExecutor> NewExecutor = MakeShared<FTaskExecutor>(Config.TimeoutSeconds, Config.MaxConcurrentProcesses);
+	NewExecutor->OnOutput().AddSP(this, &FCompilationSession::DispatchLog, false);
+	NewExecutor->OnFinished().AddSP(this, &FCompilationSession::OnExecutorFinishedInternal);
+
+	bool bShouldStart = false;
+	{
+		FScopeLock Lock(&SessionMutex);
+		if (bIsActive && !CancellationFlag && !bIsTearingDown)
+		{
+			Executor = NewExecutor;
+			bShouldStart = true;
+		}
+	}
+
+	if (bShouldStart)
+	{
+		NewExecutor->Execute(MoveTemp(Plan.Tasks));
+	}
+	else
+	{
+		OnExecutorFinishedInternal(false, TEXT("Canceled before execution"));
 	}
 }
 
@@ -121,28 +131,29 @@ void FCompilationSession::OnExecutorFinishedInternal(bool bSuccess, const FStrin
 		Executor.Reset();
 	}
 
-	if (WorkFinishedEvent)
-	{
-		WorkFinishedEvent->Trigger();
-	}
-
 	DispatchFinished(bSuccess, Message);
 }
 
-void FCompilationSession::DispatchLog(const FString& Message)
+void FCompilationSession::DispatchLog(const FString& Message, bool bIsError)
 {
+	if (bIsTearingDown) return;
+
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
-	AsyncTask(ENamedThreads::GameThread, [WeakSelf, Message]()
+	FString LogMessage = bIsError ? TEXT("Error: ") + Message : Message;
+	
+	AsyncTask(ENamedThreads::GameThread, [WeakSelf, LogMessage]()
 	{
 		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
 		{
-			Self->LogDelegate.Broadcast(Message);
+			Self->LogDelegate.Broadcast(LogMessage);
 		}
 	});
 }
 
 void FCompilationSession::DispatchFinished(bool bSuccess, const FString& Message)
 {
+	if (bIsTearingDown) return;
+
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
 	AsyncTask(ENamedThreads::GameThread, [WeakSelf, bSuccess, Message]()
 	{

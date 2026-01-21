@@ -1,22 +1,28 @@
 ﻿#include "Services/TaskExecutor.h"
+#include "Services/ProtoBridgeFileManager.h"
 #include "HAL/FileManager.h"
 #include "Misc/ScopeLock.h"
-#include "ProtoBridgeDefs.h"
 #include "HAL/PlatformTime.h"
 #include "Async/Async.h"
+#include "ProtoBridgeDefs.h"
 
-FTaskExecutor::FTaskExecutor(double InTimeoutSeconds)
-	: CurrentTaskIndex(-1)
-	, TaskStartTime(0.0)
+FTaskExecutor::FTaskExecutor(double InTimeoutSeconds, int32 InMaxConcurrentProcesses)
+	: SessionStartTime(0.0)
 	, TimeoutSeconds(InTimeoutSeconds)
+	, MaxConcurrentProcesses(FMath::Clamp(InMaxConcurrentProcesses, 1, 16))
 	, bIsRunning(false)
 	, bIsCancelled(false)
 	, bHasErrors(false)
+	, bIsTearingDown(false)
 {
 }
 
 FTaskExecutor::~FTaskExecutor()
 {
+	{
+		FScopeLock Lock(&StateMutex);
+		bIsTearingDown = true;
+	}
 	Cancel();
 }
 
@@ -26,122 +32,121 @@ void FTaskExecutor::Execute(TArray<FCompilationTask>&& InTasks)
 		FScopeLock Lock(&StateMutex);
 		if (bIsRunning) return;
 		
-		Tasks = MoveTemp(InTasks);
+		for (FCompilationTask& Task : InTasks)
+		{
+			TaskQueue.Enqueue(MoveTemp(Task));
+		}
+		
 		bIsRunning = true;
 		bIsCancelled = false;
 		bHasErrors = false;
-		CurrentTaskIndex = -1;
+		SessionStartTime = FPlatformTime::Seconds();
 	}
 
 	StartNextTask();
-}
-
-void FTaskExecutor::StartNextTask()
-{
-	FCompilationTask TaskToRun;
 	
-	{
-		FScopeLock Lock(&StateMutex);
-		if (bIsCancelled)
-		{
-			Finalize(false, TEXT("Operation canceled"));
-			return;
-		}
-
-		CurrentTaskIndex++;
-		if (CurrentTaskIndex >= Tasks.Num())
-		{
-			Finalize(!bHasErrors, bHasErrors ? TEXT("Finished with errors") : TEXT("Success"));
-			return;
-		}
-
-		CurrentTask = Tasks[CurrentTaskIndex];
-		TaskToRun = CurrentTask;
-		TaskStartTime = FPlatformTime::Seconds();
-	}
-
-	OutputDelegate.Broadcast(FString::Printf(TEXT("Compiling: %s"), *TaskToRun.SourceDir));
-
-	TSharedPtr<FMonitoredProcess> Process = MakeShared<FMonitoredProcess>(TaskToRun.ProtocPath, TaskToRun.Arguments, true);
-	
-	TWeakPtr<FMonitoredProcess> WeakProc = Process;
-	TWeakPtr<FTaskExecutor> WeakSelf = AsShared();
-
-	Process->OnOutput().BindLambda([WeakSelf, WeakProc](FString Output)
-	{
-		if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
-		{
-			Self->HandleOutput(MoveTemp(Output), WeakProc);
-		}
-	});
-
-	Process->OnCompleted().BindLambda([WeakSelf, WeakProc](int32 Code)
-	{
-		if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
-		{
-			Self->HandleCompleted(Code, WeakProc);
-		}
-	});
-
-	{
-		FScopeLock Lock(&StateMutex);
-		CurrentProcess = Process;
-	}
-
-	if (!Process->Launch())
-	{
-		{
-			FScopeLock Lock(&StateMutex);
-			CurrentProcess.Reset();
-		}
-		
-		CleanupCurrentTask();
-		OutputDelegate.Broadcast(TEXT("Critical Error: Failed to launch protoc process."));
-		
-		Async(EAsyncExecution::Thread, [WeakSelf]()
-		{
-			if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
-			{
-				Self->Finalize(false, TEXT("Failed to launch compiler process"));
-			}
-		});
-		return;
-	}
-
 	if (TimeoutSeconds > 0.0)
 	{
-		FScopeLock Lock(&StateMutex);
 		TimeoutTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
-			FTickerDelegate::CreateLambda([WeakSelf](float Delta) -> bool
-			{
-				if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
-				{
-					return Self->HandleTimeout(Delta);
-				}
-				return false;
-			}),
+			FTickerDelegate::CreateSP(this, &FTaskExecutor::HandleTimeout),
 			1.0f 
 		);
 	}
 }
 
-void FTaskExecutor::Cancel()
+void FTaskExecutor::StartNextTask()
 {
-	TSharedPtr<FMonitoredProcess> ProcToCancel;
+	TArray<TSharedPtr<FMonitoredProcess>> ProcessesToLaunch;
+	
 	{
 		FScopeLock Lock(&StateMutex);
-		bIsCancelled = true;
-		ProcToCancel = CurrentProcess;
-		if (TimeoutTickerHandle.IsValid())
+		if (bIsCancelled || bIsTearingDown)
 		{
-			FTSTicker::GetCoreTicker().RemoveTicker(TimeoutTickerHandle);
-			TimeoutTickerHandle.Reset();
+			if (ActiveProcesses.Num() == 0 && bIsRunning)
+			{
+				Lock.Unlock();
+				Finalize(false, TEXT("Operation canceled"));
+			}
+			return;
+		}
+
+		while (!TaskQueue.IsEmpty() && ActiveProcesses.Num() < MaxConcurrentProcesses)
+		{
+			FCompilationTask Task;
+			if (TaskQueue.Dequeue(Task))
+			{
+				TSharedPtr<FMonitoredProcess> Process = MakeShared<FMonitoredProcess>(Task.ProtocPath, Task.Arguments, true);
+				
+				TWeakPtr<FMonitoredProcess> WeakProc = Process;
+				TWeakPtr<FTaskExecutor> WeakSelf = AsShared();
+
+				Process->OnOutput().BindLambda([WeakSelf, WeakProc](FString Output)
+				{
+					if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
+					{
+						Self->HandleOutput(MoveTemp(Output), WeakProc);
+					}
+				});
+
+				Process->OnCompleted().BindLambda([WeakSelf, WeakProc](int32 Code)
+				{
+					if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
+					{
+						Self->HandleCompleted(Code, WeakProc);
+					}
+				});
+
+				ActiveProcesses.Add(Process);
+				ProcessToTaskMap.Add(Process, Task);
+				ProcessesToLaunch.Add(Process);
+			}
+		}
+
+		if (ActiveProcesses.Num() == 0 && TaskQueue.IsEmpty())
+		{
+			bool bResult = !bHasErrors;
+			FString Msg = bHasErrors ? TEXT("Finished with errors") : TEXT("Success");
+			Lock.Unlock();
+			Finalize(bResult, Msg);
+			return;
 		}
 	}
 
-	if (ProcToCancel.IsValid())
+	for (auto& Proc : ProcessesToLaunch)
 	{
-		ProcToCancel->Cancel(true);
+		if (!Proc->Launch())
+		{
+			{
+				FScopeLock Lock(&StateMutex);
+				for (TSharedPtr<FMonitoredProcess>& ActiveProc : ActiveProcesses)
+				{
+					if (ActiveProc.IsValid())
+					{
+						ActiveProc->Cancel(true);
+					}
+				}
+			}
+			Finalize(false, TEXT("Failed to launch process"));
+			return;
+		}
+	}
+}
+
+void FTaskExecutor::Cancel()
+{
+	TArray<TSharedPtr<FMonitoredProcess>> ToCancel;
+	{
+		FScopeLock Lock(&StateMutex);
+		bIsCancelled = true;
+		ToCancel = ActiveProcesses;
+	}
+
+	for (auto& Proc : ToCancel)
+	{
+		if (Proc.IsValid())
+		{
+			Proc->Cancel(true);
+		}
 	}
 }
 
@@ -157,7 +162,7 @@ void FTaskExecutor::HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> Pro
 	{
 		FScopeLock Lock(&StateMutex);
 		TSharedPtr<FMonitoredProcess> Proc = ProcWeak.Pin();
-		if (Proc.IsValid() && Proc == CurrentProcess)
+		if (Proc.IsValid() && ActiveProcesses.Contains(Proc))
 		{
 			bIsValid = true;
 		}
@@ -171,91 +176,80 @@ void FTaskExecutor::HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> Pro
 
 void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess> ProcWeak)
 {
-	bool bMatches = false;
+	FCompilationTask CompletedTask;
+	bool bFound = false;
+
 	{
 		FScopeLock Lock(&StateMutex);
 		TSharedPtr<FMonitoredProcess> Proc = ProcWeak.Pin();
-		if (Proc.IsValid() && Proc == CurrentProcess)
+		if (Proc.IsValid() && ActiveProcesses.Contains(Proc))
 		{
-			bMatches = true;
-			CurrentProcess.Reset();
-			if (TimeoutTickerHandle.IsValid())
+			CompletedTask = ProcessToTaskMap.FindChecked(Proc);
+			ProcessToTaskMap.Remove(Proc);
+			ActiveProcesses.Remove(Proc);
+			bFound = true;
+			
+			if (ReturnCode != 0)
 			{
-				FTSTicker::GetCoreTicker().RemoveTicker(TimeoutTickerHandle);
-				TimeoutTickerHandle.Reset();
+				bHasErrors = true;
 			}
 		}
 	}
 
-	if (!bMatches) return;
-
-	if (ReturnCode != 0)
+	if (bFound)
 	{
-		OutputDelegate.Broadcast(FString::Printf(TEXT("Process exited with code %d"), ReturnCode));
-		FScopeLock Lock(&StateMutex);
-		bHasErrors = true;
-	}
-
-	CleanupCurrentTask();
-	
-	TWeakPtr<FTaskExecutor> WeakSelf = AsShared();
-	Async(EAsyncExecution::Thread, [WeakSelf]()
-	{
-		if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
+		if (ReturnCode == 0)
 		{
-			Self->StartNextTask();
+			FProtoBridgeFileManager::DeleteFile(CompletedTask.TempArgFilePath);
 		}
-	});
+		else
+		{
+			OutputDelegate.Broadcast(FString::Printf(TEXT("Process failed with code %d. Arguments file kept at: %s"), ReturnCode, *CompletedTask.TempArgFilePath));
+		}
+		
+		TWeakPtr<FTaskExecutor> WeakSelf = AsShared();
+		AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [WeakSelf]()
+		{
+			if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
+			{
+				Self->StartNextTask();
+			}
+		});
+	}
 }
 
 bool FTaskExecutor::HandleTimeout(float DeltaTime)
 {
-	TSharedPtr<FMonitoredProcess> ProcToCancel;
+	TArray<TSharedPtr<FMonitoredProcess>> ToCancel;
 	bool bShouldCancel = false;
 
 	{
 		FScopeLock Lock(&StateMutex);
-		if (bIsRunning && CurrentProcess.IsValid())
+		if (!bIsRunning) return false;
+
+		double Duration = FPlatformTime::Seconds() - SessionStartTime;
+		if (Duration > TimeoutSeconds)
 		{
-			double Duration = FPlatformTime::Seconds() - TaskStartTime;
-			if (Duration > TimeoutSeconds)
-			{
-				bShouldCancel = true;
-				ProcToCancel = CurrentProcess;
-				bHasErrors = true;
-			}
-		}
-		else
-		{
-			TimeoutTickerHandle.Reset();
-			return false;
+			ToCancel = ActiveProcesses; 
+			bHasErrors = true;
+			bIsCancelled = true;
+			bShouldCancel = true;
 		}
 	}
 
 	if (bShouldCancel)
 	{
-		OutputDelegate.Broadcast(TEXT("Error: Compilation timed out. Terminating process."));
-		if (ProcToCancel.IsValid())
+		OutputDelegate.Broadcast(TEXT("Error: Compilation timed out."));
+		for (auto& Proc : ToCancel)
 		{
-			ProcToCancel->Cancel(true);
+			if (Proc.IsValid())
+			{
+				Proc->Cancel(true);
+			}
 		}
 	}
 
 	return true;
-}
-
-void FTaskExecutor::CleanupCurrentTask()
-{
-	FString PathToDelete;
-	{
-		FScopeLock Lock(&StateMutex);
-		PathToDelete = CurrentTask.TempArgFilePath;
-	}
-
-	if (!PathToDelete.IsEmpty() && IFileManager::Get().FileExists(*PathToDelete))
-	{
-		IFileManager::Get().Delete(*PathToDelete, false, true);
-	}
 }
 
 void FTaskExecutor::Finalize(bool bSuccess, const FString& Message)

@@ -4,6 +4,7 @@
 #include "Logging/LogVerbosity.h"
 
 class IProtoBridgeService;
+class IProtoBridgeOutputPresenter;
 
 class FProtoBridgeUIManager : public TSharedFromThis<FProtoBridgeUIManager>
 {
@@ -20,7 +21,7 @@ private:
 	void HandleLogMessage(const FString& Message, ELogVerbosity::Type Verbosity);
 
 	TWeakPtr<IProtoBridgeService> Service;
-	FName LogCategoryName;
+	TArray<TSharedPtr<IProtoBridgeOutputPresenter>> Presenters;
 
 	FDelegateHandle StartedHandle;
 	FDelegateHandle FinishedHandle;

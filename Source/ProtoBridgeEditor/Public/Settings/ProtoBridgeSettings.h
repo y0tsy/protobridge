@@ -45,6 +45,9 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "ProtoBridge | Performance")
 	double TimeoutSeconds;
 
+	UPROPERTY(Config, EditAnywhere, Category = "ProtoBridge | Performance", meta = (ClampMin = "1", UIMin = "1"))
+	int32 MaxConcurrentProcesses;
+
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif

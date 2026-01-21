@@ -18,4 +18,5 @@ struct FProtoBridgeConfiguration
 	TArray<FProtoBridgeMapping> Mappings;
 	FString ApiMacro;
 	double TimeoutSeconds;
+	int32 MaxConcurrentProcesses;
 };
