@@ -31,18 +31,18 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 
 		if (!FProtoBridgePathHelpers::IsPathSafe(Source, Config.Environment))
 		{
-			Plan.Errors.Add(FString::Printf(TEXT("Security Error: Source path is unsafe: %s"), *Source));
+			Plan.Errors.Add(FString::Printf(TEXT("Security Error: Source path is unsafe or forbidden: %s"), *Source));
 			continue;
 		}
 
 		if (!FProtoBridgePathHelpers::IsPathSafe(Dest, Config.Environment))
 		{
-			Plan.Errors.Add(FString::Printf(TEXT("Security Error: Destination path is unsafe: %s"), *Dest));
+			Plan.Errors.Add(FString::Printf(TEXT("Security Error: Destination path is unsafe or forbidden: %s"), *Dest));
 			continue;
 		}
 
 		TArray<FString> Files;
-		if (!FProtoBridgeFileScanner::FindProtoFiles(Source, Mapping.bRecursive, Mapping.Blacklist, Files, CancellationFlag))
+		if (!FProtoBridgeFileScanner::FindProtoFiles(Source, Mapping.bRecursive, Mapping.ExcludePatterns, Files, CancellationFlag))
 		{
 			if (CancellationFlag)
 			{
@@ -68,7 +68,7 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 			}
 			else
 			{
-				Plan.Errors.Add(FString::Printf(TEXT("Failed to build arguments for %s"), *Source));
+				Plan.Errors.Add(FString::Printf(TEXT("Failed to build arguments for %s. Check path characters."), *Source));
 			}
 		}
 	}

@@ -3,13 +3,12 @@
 #include "CoreMinimal.h"
 #include "Logging/LogVerbosity.h"
 
-class IProtoBridgeService;
 class IProtoBridgeOutputPresenter;
 
 class FProtoBridgeUIManager : public TSharedFromThis<FProtoBridgeUIManager>
 {
 public:
-	FProtoBridgeUIManager(TSharedPtr<IProtoBridgeService> InService);
+	FProtoBridgeUIManager();
 	~FProtoBridgeUIManager();
 
 	void Initialize();
@@ -20,7 +19,6 @@ private:
 	void HandleCompilationFinished(bool bSuccess, const FString& Message);
 	void HandleLogMessage(const FString& Message, ELogVerbosity::Type Verbosity);
 
-	TWeakPtr<IProtoBridgeService> Service;
 	TArray<TSharedPtr<IProtoBridgeOutputPresenter>> Presenters;
 
 	FDelegateHandle StartedHandle;

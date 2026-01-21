@@ -19,7 +19,7 @@ struct FProtoBridgeMapping
 	bool bRecursive = true;
 
 	UPROPERTY(EditAnywhere, Category = "Config")
-	TArray<FString> Blacklist;
+	TArray<FString> ExcludePatterns;
 };
 
 UCLASS(Config = Editor, DefaultConfig, meta = (DisplayName = "ProtoBridge"))

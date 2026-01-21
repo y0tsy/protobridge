@@ -3,7 +3,6 @@
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
-#include "Internationalization/Regex.h"
 #include "HAL/PlatformFileManager.h"
 #include "Interfaces/IPluginManager.h"
 
@@ -13,27 +12,32 @@ FString FProtoBridgePathHelpers::ResolvePath(const FString& InPath, const FProto
 
 	FString PathStr = InPath;
 	
-	if (PathStr.Contains(FProtoBridgeDefs::TokenProjectDir))
-	{
-		PathStr = PathStr.Replace(*FProtoBridgeDefs::TokenProjectDir, *Context.ProjectDirectory);
-	}
-	if (PathStr.Contains(FProtoBridgeDefs::TokenPluginDir))
-	{
-		PathStr = PathStr.Replace(*FProtoBridgeDefs::TokenPluginDir, *Context.PluginDirectory);
-	}
+	PathStr.ReplaceInline(*FProtoBridgeDefs::TokenProjectDir, *Context.ProjectDirectory, ESearchCase::IgnoreCase);
+	PathStr.ReplaceInline(*FProtoBridgeDefs::TokenPluginDir, *Context.PluginDirectory, ESearchCase::IgnoreCase);
 
-	static const FRegexPattern PluginPattern(FProtoBridgeDefs::TokenPluginMacro + TEXT("([a-zA-Z0-9_]+)\\}"));
-	FRegexMatcher Matcher(PluginPattern, PathStr);
-
-	while (Matcher.FindNext())
+	int32 PluginMacroIndex = PathStr.Find(FProtoBridgeDefs::TokenPluginMacroStart);
+	while (PluginMacroIndex != INDEX_NONE)
 	{
-		FString Placeholder = Matcher.GetCaptureGroup(0);
-		FString PluginName = Matcher.GetCaptureGroup(1);
-
-		if (const FString* FoundPath = Context.PluginLocations.Find(PluginName))
+		int32 EndIndex = PathStr.Find(TEXT("}"), ESearchCase::IgnoreCase, ESearchDir::FromStart, PluginMacroIndex);
+		if (EndIndex != INDEX_NONE)
 		{
-			PathStr = PathStr.Replace(*Placeholder, **FoundPath);
+			FString Placeholder = PathStr.Mid(PluginMacroIndex, EndIndex - PluginMacroIndex + 1);
+			FString PluginName = Placeholder.Mid(FProtoBridgeDefs::TokenPluginMacroStart.Len(), Placeholder.Len() - FProtoBridgeDefs::TokenPluginMacroStart.Len() - 1);
+			
+			if (const FString* FoundPath = Context.PluginLocations.Find(PluginName))
+			{
+				PathStr.ReplaceInline(*Placeholder, **FoundPath);
+			}
+			else
+			{
+				break;
+			}
 		}
+		else
+		{
+			break;
+		}
+		PluginMacroIndex = PathStr.Find(FProtoBridgeDefs::TokenPluginMacroStart);
 	}
 
 	NormalizePath(PathStr);
@@ -108,14 +112,27 @@ bool FProtoBridgePathHelpers::IsPathSafe(const FString& RawPath, const FProtoBri
 
 	if (FullPath.Contains(TEXT(".."))) return false;
 
-	if (FPaths::IsUnderDirectory(FullPath, Context.ProjectDirectory)) return true;
-	if (FPaths::IsUnderDirectory(FullPath, Context.PluginDirectory)) return true;
-	
-	for (const auto& Pair : Context.PluginLocations)
+	auto IsUnderSafeDir = [](const FString& PathToCheck, const FString& SafeDir) -> bool
 	{
-		if (FPaths::IsUnderDirectory(FullPath, Pair.Value)) return true;
+		return FPaths::IsUnderDirectory(PathToCheck, SafeDir);
+	};
+
+	bool bIsUnderSafeLocation = IsUnderSafeDir(FullPath, Context.ProjectDirectory) || 
+								IsUnderSafeDir(FullPath, Context.PluginDirectory);
+
+	if (!bIsUnderSafeLocation)
+	{
+		for (const auto& Pair : Context.PluginLocations)
+		{
+			if (IsUnderSafeDir(FullPath, Pair.Value))
+			{
+				bIsUnderSafeLocation = true;
+				break;
+			}
+		}
 	}
-	return false;
+
+	return bIsUnderSafeLocation;
 }
 
 void FProtoBridgePathHelpers::NormalizePath(FString& Path)
@@ -126,7 +143,7 @@ void FProtoBridgePathHelpers::NormalizePath(FString& Path)
 	FPaths::CollapseRelativeDirectories(Path);
 }
 
-bool FProtoBridgeFileScanner::FindProtoFiles(const FString& SourceDir, bool bRecursive, const TArray<FString>& Blacklist, TArray<FString>& OutFiles, const TAtomic<bool>& CancellationFlag)
+bool FProtoBridgeFileScanner::FindProtoFiles(const FString& SourceDir, bool bRecursive, const TArray<FString>& ExcludeList, TArray<FString>& OutFiles, const TAtomic<bool>& CancellationFlag)
 {
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
 
@@ -138,9 +155,9 @@ bool FProtoBridgeFileScanner::FindProtoFiles(const FString& SourceDir, bool bRec
 	class FScannerVisitor : public IPlatformFile::FDirectoryVisitor
 	{
 	public:
-		FScannerVisitor(TArray<FString>& InFiles, const TArray<FString>& InBlacklist, const TAtomic<bool>& InCancelFlag)
+		FScannerVisitor(TArray<FString>& InFiles, const TArray<FString>& InExcludeList, const TAtomic<bool>& InCancelFlag)
 			: Files(InFiles)
-			, Blacklist(InBlacklist)
+			, ExcludeList(InExcludeList)
 			, CancelFlag(InCancelFlag)
 		{}
 
@@ -161,18 +178,18 @@ bool FProtoBridgeFileScanner::FindProtoFiles(const FString& SourceDir, bool bRec
 			{
 				FProtoBridgePathHelpers::NormalizePath(FilePath);
 				
-				bool bIsBlacklisted = false;
-				for (const FString& Pattern : Blacklist)
+				bool bIsExcluded = false;
+				for (const FString& Pattern : ExcludeList)
 				{
 					if (Pattern.IsEmpty()) continue;
 					if (FilePath.MatchesWildcard(Pattern) || FPaths::GetCleanFilename(FilePath).MatchesWildcard(Pattern))
 					{
-						bIsBlacklisted = true;
+						bIsExcluded = true;
 						break;
 					}
 				}
 
-				if (!bIsBlacklisted)
+				if (!bIsExcluded)
 				{
 					Files.Add(MoveTemp(FilePath));
 				}
@@ -182,11 +199,11 @@ bool FProtoBridgeFileScanner::FindProtoFiles(const FString& SourceDir, bool bRec
 
 	private:
 		TArray<FString>& Files;
-		const TArray<FString>& Blacklist;
+		const TArray<FString>& ExcludeList;
 		const TAtomic<bool>& CancelFlag;
 	};
 
-	FScannerVisitor Visitor(OutFiles, Blacklist, CancellationFlag);
+	FScannerVisitor Visitor(OutFiles, ExcludeList, CancellationFlag);
 	
 	if (bRecursive)
 	{

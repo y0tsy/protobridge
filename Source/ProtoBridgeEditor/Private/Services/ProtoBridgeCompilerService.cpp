@@ -1,14 +1,18 @@
 ﻿#include "Services/ProtoBridgeCompilerService.h"
 #include "Services/CompilationSession.h"
+#include "Services/ProtoBridgeEventBus.h"
 #include "ProtoBridgeDefs.h"
-#include "Async/Async.h"
 
 FProtoBridgeCompilerService::FProtoBridgeCompilerService()
 {
+	FinishedHandle = FProtoBridgeEventBus::Get().RegisterOnCompilationFinished(
+		FOnProtoBridgeCompilationFinished::FDelegate::CreateRaw(this, &FProtoBridgeCompilerService::OnCompilationFinished)
+	);
 }
 
 FProtoBridgeCompilerService::~FProtoBridgeCompilerService()
 {
+	FProtoBridgeEventBus::Get().UnregisterOnCompilationFinished(FinishedHandle);
 	Cancel();
 	WaitForCompletion();
 }
@@ -23,10 +27,6 @@ void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Confi
 	}
 
 	CurrentSession = MakeShared<FCompilationSession>();
-	CurrentSession->OnStarted().AddSP(this, &FProtoBridgeCompilerService::OnSessionStarted);
-	CurrentSession->OnLog().AddSP(this, &FProtoBridgeCompilerService::OnSessionLog);
-	CurrentSession->OnFinished().AddSP(this, &FProtoBridgeCompilerService::OnSessionFinished);
-
 	CurrentSession->Start(Config);
 }
 
@@ -59,57 +59,8 @@ bool FProtoBridgeCompilerService::IsCompiling() const
 	return CurrentSession.IsValid() && CurrentSession->IsRunning();
 }
 
-FDelegateHandle FProtoBridgeCompilerService::RegisterOnCompilationStarted(const FOnProtoBridgeCompilationStarted::FDelegate& Delegate)
+void FProtoBridgeCompilerService::OnCompilationFinished(bool bSuccess, const FString& Message)
 {
-	return CompilationStartedDelegate.Add(Delegate);
-}
-
-void FProtoBridgeCompilerService::UnregisterOnCompilationStarted(FDelegateHandle Handle)
-{
-	CompilationStartedDelegate.Remove(Handle);
-}
-
-FDelegateHandle FProtoBridgeCompilerService::RegisterOnCompilationFinished(const FOnProtoBridgeCompilationFinished::FDelegate& Delegate)
-{
-	return CompilationFinishedDelegate.Add(Delegate);
-}
-
-void FProtoBridgeCompilerService::UnregisterOnCompilationFinished(FDelegateHandle Handle)
-{
-	CompilationFinishedDelegate.Remove(Handle);
-}
-
-FDelegateHandle FProtoBridgeCompilerService::RegisterOnLogMessage(const FOnProtoBridgeLogMessage::FDelegate& Delegate)
-{
-	return LogDispatcher.Add(Delegate);
-}
-
-void FProtoBridgeCompilerService::UnregisterOnLogMessage(FDelegateHandle Handle)
-{
-	LogDispatcher.Remove(Handle);
-}
-
-void FProtoBridgeCompilerService::OnSessionStarted()
-{
-	CompilationStartedDelegate.Broadcast();
-}
-
-void FProtoBridgeCompilerService::OnSessionLog(const FString& Msg)
-{
-	ELogVerbosity::Type Verbosity = ELogVerbosity::Display;
-	if (Msg.StartsWith(TEXT("Error:")))
-	{
-		Verbosity = ELogVerbosity::Error;
-	}
-	else if (Msg.Contains(TEXT("warning"), ESearchCase::IgnoreCase)) 
-	{
-		Verbosity = ELogVerbosity::Warning;
-	}
-
-	LogDispatcher.Broadcast(Msg, Verbosity);
-}
-
-void FProtoBridgeCompilerService::OnSessionFinished(bool bSuccess, const FString& Msg)
-{
-	CompilationFinishedDelegate.Broadcast(bSuccess, Msg);
+	FScopeLock Lock(&ServiceMutex);
+	CurrentSession.Reset();
 }

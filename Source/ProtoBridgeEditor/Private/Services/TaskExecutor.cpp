@@ -1,10 +1,11 @@
 ﻿#include "Services/TaskExecutor.h"
 #include "Services/ProtoBridgeFileManager.h"
-#include "HAL/FileManager.h"
+#include "Services/ProtoBridgeEventBus.h"
 #include "Misc/ScopeLock.h"
 #include "HAL/PlatformTime.h"
 #include "Async/Async.h"
 #include "ProtoBridgeDefs.h"
+#include "HAL/PlatformProcess.h"
 
 FTaskExecutor::FTaskExecutor(double InTimeoutSeconds, int32 InMaxConcurrentProcesses)
 	: SessionStartTime(0.0)
@@ -19,11 +20,13 @@ FTaskExecutor::FTaskExecutor(double InTimeoutSeconds, int32 InMaxConcurrentProce
 
 FTaskExecutor::~FTaskExecutor()
 {
-	{
-		FScopeLock Lock(&StateMutex);
-		bIsTearingDown = true;
-	}
+	bIsTearingDown = true;
 	Cancel();
+	
+	if (MonitorFuture.IsValid())
+	{
+		MonitorFuture.Wait();
+	}
 }
 
 void FTaskExecutor::Execute(TArray<FCompilationTask>&& InTasks)
@@ -47,10 +50,14 @@ void FTaskExecutor::Execute(TArray<FCompilationTask>&& InTasks)
 	
 	if (TimeoutSeconds > 0.0)
 	{
-		TimeoutTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
-			FTickerDelegate::CreateSP(this, &FTaskExecutor::HandleTimeout),
-			1.0f 
-		);
+		TWeakPtr<FTaskExecutor> WeakSelf = AsShared();
+		MonitorFuture = Async(EAsyncExecution::Thread, [WeakSelf]()
+		{
+			if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
+			{
+				Self->RunMonitorLoop();
+			}
+		});
 	}
 }
 
@@ -116,18 +123,28 @@ void FTaskExecutor::StartNextTask()
 	{
 		if (!Proc->Launch())
 		{
+			bool bWasEmpty = false;
 			{
 				FScopeLock Lock(&StateMutex);
-				for (TSharedPtr<FMonitoredProcess>& ActiveProc : ActiveProcesses)
+				if (ProcessToTaskMap.Contains(Proc))
 				{
-					if (ActiveProc.IsValid())
-					{
-						ActiveProc->Cancel(true);
-					}
+					ActiveProcesses.Remove(Proc);
+					ProcessToTaskMap.Remove(Proc);
 				}
+				bHasErrors = true;
+				bWasEmpty = ActiveProcesses.Num() == 0 && TaskQueue.IsEmpty();
 			}
-			Finalize(false, TEXT("Failed to launch process"));
-			return;
+
+			FProtoBridgeEventBus::Get().BroadcastLog(TEXT("Failed to launch compilation process"), ELogVerbosity::Error);
+			
+			if (bWasEmpty)
+			{
+				Finalize(false, TEXT("Failed to launch process"));
+			}
+			else
+			{
+				StartNextTask();
+			}
 		}
 	}
 }
@@ -156,33 +173,56 @@ bool FTaskExecutor::IsRunning() const
 	return bIsRunning;
 }
 
-void FTaskExecutor::HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> ProcWeak)
+void FTaskExecutor::RunMonitorLoop()
 {
-	bool bIsValid = false;
+	while (!bIsTearingDown)
 	{
-		FScopeLock Lock(&StateMutex);
-		TSharedPtr<FMonitoredProcess> Proc = ProcWeak.Pin();
-		if (Proc.IsValid() && ActiveProcesses.Contains(Proc))
+		FPlatformProcess::Sleep(1.0f);
+
+		bool bShouldCancel = false;
 		{
-			bIsValid = true;
+			FScopeLock Lock(&StateMutex);
+			if (!bIsRunning) break;
+			
+			if (TimeoutSeconds > 0.0)
+			{
+				double Duration = FPlatformTime::Seconds() - SessionStartTime;
+				if (Duration > TimeoutSeconds)
+				{
+					bHasErrors = true;
+					bIsCancelled = true;
+					bShouldCancel = true;
+				}
+			}
+		}
+
+		if (bShouldCancel)
+		{
+			FProtoBridgeEventBus::Get().BroadcastLog(TEXT("Error: Compilation timed out."), ELogVerbosity::Error);
+			Cancel();
+			break;
 		}
 	}
-	
-	if (bIsValid)
-	{
-		OutputDelegate.Broadcast(Output);
-	}
+}
+
+void FTaskExecutor::HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> ProcWeak)
+{
+	if (bIsTearingDown) return;
+	FProtoBridgeEventBus::Get().BroadcastLog(Output, ELogVerbosity::Display);
 }
 
 void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess> ProcWeak)
 {
+	if (bIsTearingDown) return;
+
 	FCompilationTask CompletedTask;
 	bool bFound = false;
 
 	{
 		FScopeLock Lock(&StateMutex);
 		TSharedPtr<FMonitoredProcess> Proc = ProcWeak.Pin();
-		if (Proc.IsValid() && ActiveProcesses.Contains(Proc))
+		
+		if (Proc.IsValid() && ProcessToTaskMap.Contains(Proc))
 		{
 			CompletedTask = ProcessToTaskMap.FindChecked(Proc);
 			ProcessToTaskMap.Remove(Proc);
@@ -204,7 +244,7 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 		}
 		else
 		{
-			OutputDelegate.Broadcast(FString::Printf(TEXT("Process failed with code %d. Arguments file kept at: %s"), ReturnCode, *CompletedTask.TempArgFilePath));
+			FProtoBridgeEventBus::Get().BroadcastLog(FString::Printf(TEXT("Process failed with code %d. Args: %s"), ReturnCode, *CompletedTask.TempArgFilePath), ELogVerbosity::Error);
 		}
 		
 		TWeakPtr<FTaskExecutor> WeakSelf = AsShared();
@@ -218,50 +258,11 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 	}
 }
 
-bool FTaskExecutor::HandleTimeout(float DeltaTime)
-{
-	TArray<TSharedPtr<FMonitoredProcess>> ToCancel;
-	bool bShouldCancel = false;
-
-	{
-		FScopeLock Lock(&StateMutex);
-		if (!bIsRunning) return false;
-
-		double Duration = FPlatformTime::Seconds() - SessionStartTime;
-		if (Duration > TimeoutSeconds)
-		{
-			ToCancel = ActiveProcesses; 
-			bHasErrors = true;
-			bIsCancelled = true;
-			bShouldCancel = true;
-		}
-	}
-
-	if (bShouldCancel)
-	{
-		OutputDelegate.Broadcast(TEXT("Error: Compilation timed out."));
-		for (auto& Proc : ToCancel)
-		{
-			if (Proc.IsValid())
-			{
-				Proc->Cancel(true);
-			}
-		}
-	}
-
-	return true;
-}
-
 void FTaskExecutor::Finalize(bool bSuccess, const FString& Message)
 {
 	{
 		FScopeLock Lock(&StateMutex);
 		bIsRunning = false;
-		if (TimeoutTickerHandle.IsValid())
-		{
-			FTSTicker::GetCoreTicker().RemoveTicker(TimeoutTickerHandle);
-			TimeoutTickerHandle.Reset();
-		}
 	}
-	FinishedDelegate.Broadcast(bSuccess, Message);
+	FProtoBridgeEventBus::Get().BroadcastCompilationFinished(bSuccess, Message);
 }

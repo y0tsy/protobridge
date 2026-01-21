@@ -1,6 +1,7 @@
 ﻿#include "Services/CompilationSession.h"
 #include "Services/TaskExecutor.h"
 #include "Services/CompilationPlanner.h"
+#include "Services/ProtoBridgeEventBus.h"
 #include "Misc/ScopeLock.h"
 #include "Async/Async.h"
 
@@ -15,6 +16,7 @@ FCompilationSession::~FCompilationSession()
 {
 	bIsTearingDown = true;
 	Cancel();
+	WaitForCompletion();
 }
 
 void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
@@ -24,7 +26,7 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 	bIsActive = true;
 	CancellationFlag = false;
 	
-	StartedDelegate.Broadcast();
+	FProtoBridgeEventBus::Get().BroadcastCompilationStarted();
 
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
 	
@@ -69,40 +71,41 @@ bool FCompilationSession::IsRunning() const
 
 void FCompilationSession::RunDiscovery(const FProtoBridgeConfiguration& Config)
 {
-	DispatchLog(TEXT("Starting discovery..."));
+	FProtoBridgeEventBus::Get().BroadcastLog(TEXT("Starting discovery..."), ELogVerbosity::Display);
 	
 	FCompilationPlan Plan = FCompilationPlanner::GeneratePlan(Config, CancellationFlag);
 
 	if (Plan.bWasCancelled)
 	{
-		OnExecutorFinishedInternal(false, TEXT("Operation canceled during discovery"));
+		FinishSession();
+		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Operation canceled during discovery"));
 		return;
 	}
 
 	for (const FString& Err : Plan.Errors)
 	{
-		DispatchLog(FString::Printf(TEXT("Error: %s"), *Err), true);
+		FProtoBridgeEventBus::Get().BroadcastLog(Err, ELogVerbosity::Error);
 	}
 
 	if (Plan.Tasks.Num() == 0)
 	{
 		bool bHasErrors = Plan.Errors.Num() > 0;
-		OnExecutorFinishedInternal(!bHasErrors, bHasErrors ? TEXT("Configuration errors detected") : TEXT("No files to compile"));
+		FinishSession();
+		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(!bHasErrors, bHasErrors ? TEXT("Configuration errors detected") : TEXT("No files to compile"));
 		return;
 	}
 
-	DispatchLog(FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num()));
+	FProtoBridgeEventBus::Get().BroadcastLog(FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num()), ELogVerbosity::Display);
 
 	if (CancellationFlag)
 	{
-		OnExecutorFinishedInternal(false, TEXT("Canceled before execution"));
+		FinishSession();
+		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Canceled before execution"));
 		return;
 	}
 
 	TSharedPtr<FTaskExecutor> NewExecutor = MakeShared<FTaskExecutor>(Config.TimeoutSeconds, Config.MaxConcurrentProcesses);
-	NewExecutor->OnOutput().AddSP(this, &FCompilationSession::DispatchLog, false);
-	NewExecutor->OnFinished().AddSP(this, &FCompilationSession::OnExecutorFinishedInternal);
-
+	
 	bool bShouldStart = false;
 	{
 		FScopeLock Lock(&SessionMutex);
@@ -119,47 +122,14 @@ void FCompilationSession::RunDiscovery(const FProtoBridgeConfiguration& Config)
 	}
 	else
 	{
-		OnExecutorFinishedInternal(false, TEXT("Canceled before execution"));
+		FinishSession();
+		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Canceled before execution"));
 	}
 }
 
-void FCompilationSession::OnExecutorFinishedInternal(bool bSuccess, const FString& Message)
+void FCompilationSession::FinishSession()
 {
-	{
-		FScopeLock Lock(&SessionMutex);
-		bIsActive = false;
-		Executor.Reset();
-	}
-
-	DispatchFinished(bSuccess, Message);
-}
-
-void FCompilationSession::DispatchLog(const FString& Message, bool bIsError)
-{
-	if (bIsTearingDown) return;
-
-	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
-	FString LogMessage = bIsError ? TEXT("Error: ") + Message : Message;
-	
-	AsyncTask(ENamedThreads::GameThread, [WeakSelf, LogMessage]()
-	{
-		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
-		{
-			Self->LogDelegate.Broadcast(LogMessage);
-		}
-	});
-}
-
-void FCompilationSession::DispatchFinished(bool bSuccess, const FString& Message)
-{
-	if (bIsTearingDown) return;
-
-	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
-	AsyncTask(ENamedThreads::GameThread, [WeakSelf, bSuccess, Message]()
-	{
-		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
-		{
-			Self->FinishedDelegate.Broadcast(bSuccess, Message);
-		}
-	});
+	FScopeLock Lock(&SessionMutex);
+	bIsActive = false;
+	Executor.Reset();
 }

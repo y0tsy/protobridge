@@ -3,6 +3,7 @@
 #include "ProtoBridgeDefs.h"
 #include "ProtoBridgeFileManager.h"
 #include "Misc/StringBuilder.h"
+#include "Misc/Paths.h"
 
 bool FCommandBuilder::Build(const FProtoBridgeConfiguration& Config, const FString& SourceDir, const FString& DestDir, const TArray<FString>& Files, FString& OutArgs, FString& OutArgFilePath)
 {
@@ -25,19 +26,20 @@ bool FCommandBuilder::GenerateArgumentsString(const FProtoBridgeConfiguration& C
 {
 	FString PluginPath = FProtoBridgePathHelpers::ResolvePluginPath(Config.Environment);
 	
-	if (!IsValidPathString(SourceDir) || !IsValidPathString(DestDir) || !IsValidPathString(PluginPath))
+	if (!IsPathSafeForCommand(SourceDir) || !IsPathSafeForCommand(DestDir) || !IsPathSafeForCommand(PluginPath))
 	{
 		return false;
 	}
 
-	TStringBuilder<4096> SB;
+	TStringBuilder<2048> SB;
+	
 	SB << TEXT("--plugin=") << FProtoBridgeDefs::PluginGeneratorCommand << TEXT("=\"") << PluginPath << TEXT("\"\n");
 	SB << TEXT("--ue_out=\"") << DestDir << TEXT("\"\n");
 	SB << TEXT("-I=\"") << SourceDir << TEXT("\"\n");
 
 	if (!Config.ApiMacro.IsEmpty())
 	{
-		if (!IsMacroSafe(Config.ApiMacro))
+		if (!IsMacroNameSafe(Config.ApiMacro))
 		{
 			return false;
 		}
@@ -46,7 +48,7 @@ bool FCommandBuilder::GenerateArgumentsString(const FProtoBridgeConfiguration& C
 
 	for (const FString& File : Files)
 	{
-		if (!IsValidPathString(File)) return false;
+		if (!IsPathSafeForCommand(File)) return false;
 		SB << TEXT("\"") << File << TEXT("\"\n");
 	}
 
@@ -54,7 +56,7 @@ bool FCommandBuilder::GenerateArgumentsString(const FProtoBridgeConfiguration& C
 	return true;
 }
 
-bool FCommandBuilder::IsMacroSafe(const FString& Str)
+bool FCommandBuilder::IsMacroNameSafe(const FString& Str)
 {
 	if (Str.IsEmpty() || FChar::IsDigit(Str[0]))
 	{
@@ -72,17 +74,18 @@ bool FCommandBuilder::IsMacroSafe(const FString& Str)
 	return true;
 }
 
-bool FCommandBuilder::IsValidPathString(const FString& Str)
+bool FCommandBuilder::IsPathSafeForCommand(const FString& Str)
 {
 	if (Str.IsEmpty()) return false;
+	if (Str.Contains(TEXT("\""))) return false; 
+	if (Str.Contains(TEXT("\n")) || Str.Contains(TEXT("\r"))) return false;
+
+	static const FString AllowedSpecialChars = TEXT(" _-./\\:");
 	
 	for (int32 i = 0; i < Str.Len(); ++i)
 	{
 		TCHAR C = Str[i];
-		const bool bIsAlnum = FChar::IsAlnum(C);
-		const bool bIsSafeSymbol = (C == TCHAR('_') || C == TCHAR('-') || C == TCHAR('.') || C == TCHAR('/') || C == TCHAR('\\') || C == TCHAR(':') || C == TCHAR(' '));
-		
-		if (!bIsAlnum && !bIsSafeSymbol)
+		if (!FChar::IsAlnum(C) && !AllowedSpecialChars.Contains(FString(1, &C)))
 		{
 			return false;
 		}

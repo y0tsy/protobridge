@@ -12,6 +12,7 @@
 #include "Interfaces/IPluginManager.h"
 #include "Async/Async.h"
 #include "Services/ProtoBridgeFileManager.h"
+#include "HAL/PlatformProcess.h"
 
 #define LOCTEXT_NAMESPACE "FProtoBridgeEditorModule"
 
@@ -27,7 +28,7 @@ void FProtoBridgeEditorModule::StartupModule()
 	});
 
 	CompilerService = MakeShared<FProtoBridgeCompilerService>();
-	UIManager = MakeShared<FProtoBridgeUIManager>(CompilerService);
+	UIManager = MakeShared<FProtoBridgeUIManager>();
 	UIManager->Initialize();
 
 	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FProtoBridgeEditorModule::RegisterMenus));
@@ -47,7 +48,17 @@ void FProtoBridgeEditorModule::ShutdownModule()
 	if (CompilerService.IsValid())
 	{
 		CompilerService->Cancel();
-		CompilerService->WaitForCompletion();
+		
+		TFuture<void> WaitFuture = Async(EAsyncExecution::Thread, [Service = CompilerService]()
+		{
+			Service->WaitForCompletion();
+		});
+
+		if (!WaitFuture.WaitFor(FTimespan::FromSeconds(3.0)))
+		{
+			UE_LOG(LogProtoBridge, Error, TEXT("Compiler service failed to shut down gracefully within timeout. Leaking resources to prevent editor hang."));
+		}
+
 		CompilerService.Reset();
 	}
 }
