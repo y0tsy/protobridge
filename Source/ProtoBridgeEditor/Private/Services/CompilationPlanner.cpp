@@ -3,17 +3,24 @@
 #include "Services/CommandBuilder.h"
 #include "Services/ProtoBridgeFileManager.h"
 #include "HAL/FileManager.h"
+#include "ProtoBridgeDefs.h"
 
 FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfiguration& Config, const TAtomic<bool>& CancellationFlag)
 {
 	FCompilationPlan Plan;
 	FCommandBuilder CommandBuilder;
 	
+	UE_LOG(LogProtoBridge, Display, TEXT("Generating compilation plan. PluginDir: %s, ProjectDir: %s"), 
+		*Config.Environment.PluginDirectory, 
+		*Config.Environment.ProjectDirectory);
+
 	FString Protoc = FProtoBridgePathHelpers::ResolveProtocPath(Config.Environment);
 
 	if (Protoc.IsEmpty() || !IFileManager::Get().FileExists(*Protoc))
 	{
-		Plan.Errors.Add(FString::Printf(TEXT("Protoc executable not found at: %s"), *Protoc));
+		FString ErrorMsg = FString::Printf(TEXT("Protoc executable not found. Searched in: %s and custom path."), *Config.Environment.PluginDirectory);
+		Plan.Errors.Add(ErrorMsg);
+		UE_LOG(LogProtoBridge, Error, TEXT("%s"), *ErrorMsg);
 		return Plan;
 	}
 
@@ -28,7 +35,11 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 		FString Source = FProtoBridgePathHelpers::ResolvePath(Mapping.SourcePath.Path, Config.Environment);
 		FString Dest = FProtoBridgePathHelpers::ResolvePath(Mapping.DestinationPath.Path, Config.Environment);
 
-		if (Source.IsEmpty() || Dest.IsEmpty()) continue;
+		if (Source.IsEmpty() || Dest.IsEmpty())
+		{
+			UE_LOG(LogProtoBridge, Warning, TEXT("Skipping mapping due to empty source or destination after resolution. Raw Source: %s, Raw Dest: %s"), *Mapping.SourcePath.Path, *Mapping.DestinationPath.Path);
+			continue;
+		}
 
 		if (!FProtoBridgePathHelpers::IsPathSafe(Source, Config.Environment))
 		{
@@ -79,6 +90,10 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 			{
 				Plan.Errors.Add(FString::Printf(TEXT("Failed to build arguments for %s. Check path characters."), *Source));
 			}
+		}
+		else
+		{
+			UE_LOG(LogProtoBridge, Display, TEXT("No proto files found in source directory: %s"), *Source);
 		}
 	}
 	return Plan;
