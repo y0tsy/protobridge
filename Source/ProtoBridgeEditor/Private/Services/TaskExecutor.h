@@ -4,7 +4,6 @@
 #include "ProtoBridgeCompilation.h"
 #include "Misc/MonitoredProcess.h"
 #include "Containers/Queue.h"
-#include "HAL/Event.h"
 
 class FTaskExecutor : public TSharedFromThis<FTaskExecutor>
 {
@@ -22,6 +21,7 @@ private:
 	void HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> ProcWeak);
 	void HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess> ProcWeak);
 	void Finalize(bool bSuccess, const FString& Message);
+	void TryLaunchProcess();
 
 	mutable FCriticalSection StateMutex;
 	
@@ -29,7 +29,6 @@ private:
 	TArray<TSharedPtr<FMonitoredProcess>> ActiveProcesses;
 	TMap<TSharedPtr<FMonitoredProcess>, FCompilationTask> ProcessToTaskMap;
 	
-	FEvent* WorkFinishedEvent;
 	int32 MaxConcurrentProcesses;
 	
 	bool bIsRunning;
