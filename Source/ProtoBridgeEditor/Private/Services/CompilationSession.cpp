@@ -4,6 +4,7 @@
 #include "Services/ProtoBridgeEventBus.h"
 #include "Misc/ScopeLock.h"
 #include "Async/Async.h"
+#include "HAL/PlatformProcess.h"
 
 FCompilationSession::FCompilationSession()
 	: bIsActive(false)
@@ -13,6 +14,7 @@ FCompilationSession::FCompilationSession()
 	ExecutorFactory = [](int32 MaxProcesses) {
 		return MakeShared<FTaskExecutor>(MaxProcesses);
 	};
+	CompletionEvent = FPlatformProcess::GetSynchEventFromPool(true);
 }
 
 FCompilationSession::~FCompilationSession()
@@ -20,6 +22,12 @@ FCompilationSession::~FCompilationSession()
 	bIsTearingDown = true;
 	Cancel();
 	WaitForCompletion();
+	
+	if (CompletionEvent)
+	{
+		FPlatformProcess::ReturnSynchEventToPool(CompletionEvent);
+		CompletionEvent = nullptr;
+	}
 }
 
 void FCompilationSession::SetExecutorFactory(FExecutorFactory InFactory)
@@ -37,15 +45,19 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 	bIsActive = true;
 	CancellationFlag = false;
 	
+	if (CompletionEvent)
+	{
+		CompletionEvent->Reset();
+	}
+	
 	FProtoBridgeEventBus::Get().BroadcastCompilationStarted();
 
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
-	
-	WorkerFuture = Async(EAsyncExecution::Thread, [WeakSelf, Config]()
+	Async(EAsyncExecution::ThreadPool, [WeakSelf, Config]()
 	{
 		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
 		{
-			Self->RunDiscovery(Config);
+			Self->RunPlanning(Config);
 		}
 	});
 }
@@ -68,9 +80,12 @@ void FCompilationSession::Cancel()
 
 void FCompilationSession::WaitForCompletion()
 {
-	if (WorkerFuture.IsValid())
+	if (CompletionEvent)
 	{
-		WorkerFuture.Wait();
+		if (IsRunning())
+		{
+			CompletionEvent->Wait();
+		}
 	}
 }
 
@@ -80,13 +95,34 @@ bool FCompilationSession::IsRunning() const
 	return bIsActive;
 }
 
-void FCompilationSession::RunDiscovery(const FProtoBridgeConfiguration& Config)
+void FCompilationSession::RunPlanning(const FProtoBridgeConfiguration& Config)
 {
+	if (CancellationFlag || bIsTearingDown)
+	{
+		FinishSession();
+		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Operation canceled"));
+		return;
+	}
+
 	FProtoBridgeEventBus::Get().BroadcastLog(TEXT("Starting discovery..."), ELogVerbosity::Display);
 	
 	FCompilationPlan Plan = FCompilationPlanner::GeneratePlan(Config, CancellationFlag);
 
-	if (Plan.bWasCancelled)
+	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
+	int32 MaxProcs = Config.MaxConcurrentProcesses;
+
+	AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [WeakSelf, Plan = MoveTemp(Plan), MaxProcs]() mutable
+	{
+		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
+		{
+			Self->OnPlanningCompleted(MoveTemp(Plan), MaxProcs);
+		}
+	});
+}
+
+void FCompilationSession::OnPlanningCompleted(FCompilationPlan Plan, int32 MaxConcurrentProcesses)
+{
+	if (Plan.bWasCancelled || CancellationFlag || bIsTearingDown)
 	{
 		FinishSession();
 		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Operation canceled during discovery"));
@@ -108,14 +144,7 @@ void FCompilationSession::RunDiscovery(const FProtoBridgeConfiguration& Config)
 
 	FProtoBridgeEventBus::Get().BroadcastLog(FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num()), ELogVerbosity::Display);
 
-	if (CancellationFlag)
-	{
-		FinishSession();
-		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Canceled before execution"));
-		return;
-	}
-
-	TSharedPtr<FTaskExecutor> NewExecutor = ExecutorFactory(Config.MaxConcurrentProcesses);
+	TSharedPtr<FTaskExecutor> NewExecutor = ExecutorFactory(MaxConcurrentProcesses);
 	
 	bool bShouldStart = false;
 	{
@@ -140,7 +169,14 @@ void FCompilationSession::RunDiscovery(const FProtoBridgeConfiguration& Config)
 
 void FCompilationSession::FinishSession()
 {
-	FScopeLock Lock(&SessionMutex);
-	bIsActive = false;
-	Executor.Reset();
+	{
+		FScopeLock Lock(&SessionMutex);
+		bIsActive = false;
+		Executor.Reset();
+	}
+	
+	if (CompletionEvent)
+	{
+		CompletionEvent->Trigger();
+	}
 }

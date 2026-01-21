@@ -3,8 +3,8 @@
 #include "CoreMinimal.h"
 #include "ProtoBridgeCompilation.h"
 #include "ProtoBridgeConfiguration.h"
-#include "Async/Future.h"
 #include "Templates/Function.h"
+#include "HAL/Event.h"
 
 class FTaskExecutor;
 
@@ -23,7 +23,8 @@ public:
 	bool IsRunning() const;
 
 private:
-	void RunDiscovery(const FProtoBridgeConfiguration& Config);
+	void RunPlanning(const FProtoBridgeConfiguration& Config);
+	void OnPlanningCompleted(FCompilationPlan Plan, int32 MaxConcurrentProcesses);
 	void FinishSession();
 	
 	TSharedPtr<FTaskExecutor> Executor;
@@ -34,5 +35,6 @@ private:
 
 	TAtomic<bool> bIsTearingDown;
 	TAtomic<bool> CancellationFlag;
-	TFuture<void> WorkerFuture;
+	
+	FEvent* CompletionEvent;
 };
