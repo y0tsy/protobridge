@@ -13,16 +13,28 @@ FTaskExecutor::FTaskExecutor(int32 InMaxConcurrentProcesses)
 	, bHasErrors(false)
 	, bIsTearingDown(false)
 {
+	WorkFinishedEvent = FPlatformProcess::GetSynchEventFromPool(true);
 }
 
 FTaskExecutor::~FTaskExecutor()
 {
 	bIsTearingDown = true;
 	Cancel();
+	
+	if (WorkFinishedEvent)
+	{
+		FPlatformProcess::ReturnSynchEventToPool(WorkFinishedEvent);
+		WorkFinishedEvent = nullptr;
+	}
 }
 
 void FTaskExecutor::Execute(TArray<FCompilationTask>&& InTasks)
 {
+	if (WorkFinishedEvent)
+	{
+		WorkFinishedEvent->Reset();
+	}
+
 	{
 		FScopeLock Lock(&StateMutex);
 		if (bIsRunning) return;
@@ -38,6 +50,11 @@ void FTaskExecutor::Execute(TArray<FCompilationTask>&& InTasks)
 	}
 
 	StartNextTask();
+
+	if (WorkFinishedEvent)
+	{
+		WorkFinishedEvent->Wait();
+	}
 }
 
 void FTaskExecutor::StartNextTask()
@@ -134,6 +151,9 @@ void FTaskExecutor::Cancel()
 	{
 		FScopeLock Lock(&StateMutex);
 		bIsCancelled = true;
+		
+		TaskQueue.Empty();
+
 		ToCancel = ActiveProcesses;
 	}
 
@@ -160,7 +180,7 @@ void FTaskExecutor::HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> Pro
 
 void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess> ProcWeak)
 {
-	if (bIsTearingDown) return;
+	if (bIsTearingDown && !bIsCancelled) return; 
 
 	FCompilationTask CompletedTask;
 	bool bFound = false;
@@ -189,7 +209,7 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 		{
 			FProtoBridgeFileManager::DeleteFile(CompletedTask.TempArgFilePath);
 		}
-		else
+		else if (!bIsCancelled) 
 		{
 			FProtoBridgeEventBus::Get().BroadcastLog(FString::Printf(TEXT("Process failed with code %d. Args: %s"), ReturnCode, *CompletedTask.TempArgFilePath), ELogVerbosity::Error);
 		}
@@ -211,5 +231,11 @@ void FTaskExecutor::Finalize(bool bSuccess, const FString& Message)
 		FScopeLock Lock(&StateMutex);
 		bIsRunning = false;
 	}
+	
 	FProtoBridgeEventBus::Get().BroadcastCompilationFinished(bSuccess, Message);
+	
+	if (WorkFinishedEvent)
+	{
+		WorkFinishedEvent->Trigger();
+	}
 }

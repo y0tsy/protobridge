@@ -8,7 +8,7 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 {
 	FString PluginPath = FProtoBridgePathHelpers::ResolvePluginPath(Config.Environment);
 	
-	if (!IsPathSafeForCommand(SourceDir) || !IsPathSafeForCommand(DestDir) || !IsPathSafeForCommand(PluginPath))
+	if (SourceDir.IsEmpty() || DestDir.IsEmpty() || PluginPath.IsEmpty())
 	{
 		return false;
 	}
@@ -30,7 +30,7 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 
 	for (const FString& File : Files)
 	{
-		if (!IsPathSafeForCommand(File)) return false;
+		if (File.IsEmpty()) return false;
 		SB << TEXT("\"") << File << TEXT("\"\n");
 	}
 
@@ -49,25 +49,6 @@ bool FCommandBuilder::IsMacroNameSafe(const FString& Str)
 	{
 		TCHAR C = Str[i];
 		if (!FChar::IsAlnum(C) && C != TCHAR('_'))
-		{
-			return false;
-		}
-	}
-	return true;
-}
-
-bool FCommandBuilder::IsPathSafeForCommand(const FString& Str)
-{
-	if (Str.IsEmpty()) return false;
-	if (Str.Contains(TEXT("\""))) return false; 
-	if (Str.Contains(TEXT("\n")) || Str.Contains(TEXT("\r"))) return false;
-
-	static const FString AllowedSpecialChars = TEXT(" _-./\\:");
-	
-	for (int32 i = 0; i < Str.Len(); ++i)
-	{
-		TCHAR C = Str[i];
-		if (!FChar::IsAlnum(C) && !AllowedSpecialChars.Contains(FString(1, &C)))
 		{
 			return false;
 		}

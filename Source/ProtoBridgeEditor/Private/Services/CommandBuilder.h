@@ -10,5 +10,4 @@ public:
 
 private:
 	bool IsMacroNameSafe(const FString& Str);
-	bool IsPathSafeForCommand(const FString& Str);
 };

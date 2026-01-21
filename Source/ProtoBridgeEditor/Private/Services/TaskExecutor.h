@@ -4,6 +4,7 @@
 #include "ProtoBridgeCompilation.h"
 #include "Misc/MonitoredProcess.h"
 #include "Containers/Queue.h"
+#include "HAL/Event.h"
 
 class FTaskExecutor : public TSharedFromThis<FTaskExecutor>
 {
@@ -28,6 +29,7 @@ private:
 	TArray<TSharedPtr<FMonitoredProcess>> ActiveProcesses;
 	TMap<TSharedPtr<FMonitoredProcess>, FCompilationTask> ProcessToTaskMap;
 	
+	FEvent* WorkFinishedEvent;
 	int32 MaxConcurrentProcesses;
 	
 	bool bIsRunning;
