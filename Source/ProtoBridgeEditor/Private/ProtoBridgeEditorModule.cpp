@@ -48,17 +48,7 @@ void FProtoBridgeEditorModule::ShutdownModule()
 	if (CompilerService.IsValid())
 	{
 		CompilerService->Cancel();
-		
-		TFuture<void> WaitFuture = Async(EAsyncExecution::Thread, [Service = CompilerService]()
-		{
-			Service->WaitForCompletion();
-		});
-
-		if (!WaitFuture.WaitFor(FTimespan::FromSeconds(3.0)))
-		{
-			UE_LOG(LogProtoBridge, Error, TEXT("Compiler service failed to shut down gracefully within timeout. Leaking resources to prevent editor hang."));
-		}
-
+		CompilerService->WaitForCompletion();
 		CompilerService.Reset();
 	}
 }

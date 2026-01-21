@@ -2,15 +2,12 @@
 #include "Services/ProtoBridgeFileManager.h"
 #include "Services/ProtoBridgeEventBus.h"
 #include "Misc/ScopeLock.h"
-#include "HAL/PlatformTime.h"
 #include "Async/Async.h"
 #include "ProtoBridgeDefs.h"
 #include "HAL/PlatformProcess.h"
 
-FTaskExecutor::FTaskExecutor(double InTimeoutSeconds, int32 InMaxConcurrentProcesses)
-	: SessionStartTime(0.0)
-	, TimeoutSeconds(InTimeoutSeconds)
-	, MaxConcurrentProcesses(FMath::Clamp(InMaxConcurrentProcesses, 1, 16))
+FTaskExecutor::FTaskExecutor(int32 InMaxConcurrentProcesses)
+	: MaxConcurrentProcesses(FMath::Clamp(InMaxConcurrentProcesses, 1, 16))
 	, bIsRunning(false)
 	, bIsCancelled(false)
 	, bHasErrors(false)
@@ -22,11 +19,6 @@ FTaskExecutor::~FTaskExecutor()
 {
 	bIsTearingDown = true;
 	Cancel();
-	
-	if (MonitorFuture.IsValid())
-	{
-		MonitorFuture.Wait();
-	}
 }
 
 void FTaskExecutor::Execute(TArray<FCompilationTask>&& InTasks)
@@ -43,22 +35,9 @@ void FTaskExecutor::Execute(TArray<FCompilationTask>&& InTasks)
 		bIsRunning = true;
 		bIsCancelled = false;
 		bHasErrors = false;
-		SessionStartTime = FPlatformTime::Seconds();
 	}
 
 	StartNextTask();
-	
-	if (TimeoutSeconds > 0.0)
-	{
-		TWeakPtr<FTaskExecutor> WeakSelf = AsShared();
-		MonitorFuture = Async(EAsyncExecution::Thread, [WeakSelf]()
-		{
-			if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
-			{
-				Self->RunMonitorLoop();
-			}
-		});
-	}
 }
 
 void FTaskExecutor::StartNextTask()
@@ -171,38 +150,6 @@ bool FTaskExecutor::IsRunning() const
 {
 	FScopeLock Lock(&StateMutex);
 	return bIsRunning;
-}
-
-void FTaskExecutor::RunMonitorLoop()
-{
-	while (!bIsTearingDown)
-	{
-		FPlatformProcess::Sleep(1.0f);
-
-		bool bShouldCancel = false;
-		{
-			FScopeLock Lock(&StateMutex);
-			if (!bIsRunning) break;
-			
-			if (TimeoutSeconds > 0.0)
-			{
-				double Duration = FPlatformTime::Seconds() - SessionStartTime;
-				if (Duration > TimeoutSeconds)
-				{
-					bHasErrors = true;
-					bIsCancelled = true;
-					bShouldCancel = true;
-				}
-			}
-		}
-
-		if (bShouldCancel)
-		{
-			FProtoBridgeEventBus::Get().BroadcastLog(TEXT("Error: Compilation timed out."), ELogVerbosity::Error);
-			Cancel();
-			break;
-		}
-	}
 }
 
 void FTaskExecutor::HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> ProcWeak)

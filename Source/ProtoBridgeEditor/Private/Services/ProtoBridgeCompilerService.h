@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Interfaces/IProtoBridgeService.h"
+#include "Containers/Ticker.h"
 
 class FCompilationSession;
 
@@ -18,8 +19,13 @@ public:
 
 private:
 	void OnCompilationFinished(bool bSuccess, const FString& Msg);
+	bool OnTimeoutTick(float Delta);
 
 	mutable FCriticalSection ServiceMutex; 
 	TSharedPtr<FCompilationSession> CurrentSession;
 	FDelegateHandle FinishedHandle;
+	
+	FTSTicker::FDelegateHandle TickerHandle;
+	double SessionStartTime;
+	double SessionTimeout;
 };

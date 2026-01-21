@@ -1,28 +1,10 @@
 ﻿#include "Services/CommandBuilder.h"
 #include "Services/ProtoBridgeUtils.h"
 #include "ProtoBridgeDefs.h"
-#include "ProtoBridgeFileManager.h"
 #include "Misc/StringBuilder.h"
 #include "Misc/Paths.h"
 
-bool FCommandBuilder::Build(const FProtoBridgeConfiguration& Config, const FString& SourceDir, const FString& DestDir, const TArray<FString>& Files, FString& OutArgs, FString& OutArgFilePath)
-{
-	FString ArgContent;
-	if (!GenerateArgumentsString(Config, SourceDir, DestDir, Files, ArgContent))
-	{
-		return false;
-	}
-
-	if (FProtoBridgeFileManager::WriteArgumentFile(ArgContent, OutArgFilePath))
-	{
-		OutArgs = FString::Printf(TEXT("@\"%s\""), *OutArgFilePath);
-		return true;
-	}
-
-	return false;
-}
-
-bool FCommandBuilder::GenerateArgumentsString(const FProtoBridgeConfiguration& Config, const FString& SourceDir, const FString& DestDir, const TArray<FString>& Files, FString& OutContent)
+bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, const FString& SourceDir, const FString& DestDir, const TArray<FString>& Files, FString& OutContent)
 {
 	FString PluginPath = FProtoBridgePathHelpers::ResolvePluginPath(Config.Environment);
 	

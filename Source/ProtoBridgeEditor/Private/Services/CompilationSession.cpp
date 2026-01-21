@@ -10,6 +10,9 @@ FCompilationSession::FCompilationSession()
 	, bIsTearingDown(false)
 	, CancellationFlag(false)
 {
+	ExecutorFactory = [](int32 MaxProcesses) {
+		return MakeShared<FTaskExecutor>(MaxProcesses);
+	};
 }
 
 FCompilationSession::~FCompilationSession()
@@ -17,6 +20,14 @@ FCompilationSession::~FCompilationSession()
 	bIsTearingDown = true;
 	Cancel();
 	WaitForCompletion();
+}
+
+void FCompilationSession::SetExecutorFactory(FExecutorFactory InFactory)
+{
+	if (InFactory)
+	{
+		ExecutorFactory = InFactory;
+	}
 }
 
 void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
@@ -104,7 +115,7 @@ void FCompilationSession::RunDiscovery(const FProtoBridgeConfiguration& Config)
 		return;
 	}
 
-	TSharedPtr<FTaskExecutor> NewExecutor = MakeShared<FTaskExecutor>(Config.TimeoutSeconds, Config.MaxConcurrentProcesses);
+	TSharedPtr<FTaskExecutor> NewExecutor = ExecutorFactory(Config.MaxConcurrentProcesses);
 	
 	bool bShouldStart = false;
 	{

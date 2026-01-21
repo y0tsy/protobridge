@@ -1,6 +1,7 @@
 ﻿#include "Services/CompilationPlanner.h"
 #include "Services/ProtoBridgeUtils.h"
 #include "Services/CommandBuilder.h"
+#include "Services/ProtoBridgeFileManager.h"
 #include "HAL/FileManager.h"
 
 FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfiguration& Config, const TAtomic<bool>& CancellationFlag)
@@ -55,16 +56,24 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 
 		if (Files.Num() > 0)
 		{
-			FString Args, TempArgFilePath;
-			if (CommandBuilder.Build(Config, Source, Dest, Files, Args, TempArgFilePath))
+			FString ArgsContent;
+			if (CommandBuilder.BuildContent(Config, Source, Dest, Files, ArgsContent))
 			{
-				FCompilationTask Task;
-				Task.ProtocPath = Protoc;
-				Task.SourceDir = Source;
-				Task.DestinationDir = Dest;
-				Task.Arguments = Args;
-				Task.TempArgFilePath = TempArgFilePath;
-				Plan.Tasks.Add(MoveTemp(Task));
+				FString TempArgFilePath;
+				if (FProtoBridgeFileManager::WriteArgumentFile(ArgsContent, TempArgFilePath))
+				{
+					FCompilationTask Task;
+					Task.ProtocPath = Protoc;
+					Task.SourceDir = Source;
+					Task.DestinationDir = Dest;
+					Task.Arguments = FString::Printf(TEXT("@\"%s\""), *TempArgFilePath);
+					Task.TempArgFilePath = TempArgFilePath;
+					Plan.Tasks.Add(MoveTemp(Task));
+				}
+				else
+				{
+					Plan.Errors.Add(FString::Printf(TEXT("Failed to write argument file for %s"), *Source));
+				}
 			}
 			else
 			{
