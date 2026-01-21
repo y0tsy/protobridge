@@ -96,8 +96,17 @@ FString FProtoBridgePathHelpers::FindBinaryPath(const FString& BaseDir, const FS
 		return FString();
 	}
 
+	FString NameToSearch = BinaryName;
+
+#if PLATFORM_WINDOWS
+	if (!NameToSearch.EndsWith(TEXT(".exe")))
+	{
+		NameToSearch += TEXT(".exe");
+	}
+#endif
+
 	TArray<FString> SearchPaths;
-	SearchPaths.Add(BaseDir / TEXT("Source") / TEXT("ThirdParty") / TEXT("bin"));
+	SearchPaths.Add(BaseDir / TEXT("Source") / TEXT("ProtoBridgeThirdParty") / TEXT("bin"));
 	SearchPaths.Add(BaseDir / TEXT("Binaries") / TEXT("ThirdParty"));
 	SearchPaths.Add(BaseDir / TEXT("Resources") / TEXT("Binaries"));
 
@@ -113,7 +122,7 @@ FString FProtoBridgePathHelpers::FindBinaryPath(const FString& BaseDir, const FS
 
 	for (const FString& Path : SearchPaths)
 	{
-		FString FullPath = Path / Platform / BinaryName;
+		FString FullPath = Path / Platform / NameToSearch;
 		
 		if (IFileManager::Get().FileExists(*FullPath))
 		{
@@ -121,25 +130,17 @@ FString FProtoBridgePathHelpers::FindBinaryPath(const FString& BaseDir, const FS
 			UE_LOG(LogProtoBridge, Display, TEXT("Found binary at: %s"), *FullPath);
 			return FullPath;
 		}
-		else
-		{
-			UE_LOG(LogProtoBridge, Verbose, TEXT("Binary not found at: %s"), *FullPath);
-		}
 		
-		FullPath = Path / BinaryName;
+		FullPath = Path / NameToSearch;
 		if (IFileManager::Get().FileExists(*FullPath))
 		{
 			NormalizePath(FullPath);
 			UE_LOG(LogProtoBridge, Display, TEXT("Found binary at: %s"), *FullPath);
 			return FullPath;
-		}
-		else
-		{
-			UE_LOG(LogProtoBridge, Verbose, TEXT("Binary not found at: %s"), *FullPath);
 		}
 	}
 
-	UE_LOG(LogProtoBridge, Warning, TEXT("Failed to find binary '%s' in %d search paths based on %s"), *BinaryName, SearchPaths.Num(), *BaseDir);
+	UE_LOG(LogProtoBridge, Warning, TEXT("Failed to find binary '%s' in %d search paths based on %s"), *NameToSearch, SearchPaths.Num(), *BaseDir);
 	return FString();
 }
 
