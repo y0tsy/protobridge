@@ -16,8 +16,16 @@ FString FProtoBridgePathHelpers::ResolvePath(const FString& InPath, const FProto
 	PathStr.ReplaceInline(*FProtoBridgeDefs::TokenPluginDir, *Context.PluginDirectory, ESearchCase::IgnoreCase);
 
 	int32 PluginMacroIndex = PathStr.Find(FProtoBridgeDefs::TokenPluginMacroStart);
+	int32 IterationCount = 0;
+	const int32 MaxIterations = 10;
+
 	while (PluginMacroIndex != INDEX_NONE)
 	{
+		if (++IterationCount > MaxIterations)
+		{
+			break;
+		}
+
 		int32 EndIndex = PathStr.Find(TEXT("}"), ESearchCase::IgnoreCase, ESearchDir::FromStart, PluginMacroIndex);
 		if (EndIndex != INDEX_NONE)
 		{
