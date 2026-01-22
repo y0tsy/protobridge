@@ -27,9 +27,9 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 
 	TStringBuilder<2048> SB;
 	
-	SB << TEXT("--plugin=protoc-gen-ue=\"") << SafePluginPath << TEXT("\"\n");
-	SB << TEXT("--ue_out=\"") << SafeDestDir << TEXT("\"\n");
-	SB << TEXT("-I=\"") << SafeSourceDir << TEXT("\"\n");
+	SB << TEXT("--plugin=protoc-gen-ue=") << SafePluginPath << TEXT("\n");
+	SB << TEXT("--ue_out=") << SafeDestDir << TEXT("\n");
+	SB << TEXT("--proto_path=") << SafeSourceDir << TEXT("\n");
 
 	if (!Config.ApiMacro.IsEmpty())
 	{
@@ -44,7 +44,7 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 	for (const FString& File : Files)
 	{
 		if (File.IsEmpty()) return false;
-		SB << TEXT("\"") << File << TEXT("\"\n");
+		SB << File << TEXT("\n");
 	}
 
 	OutContent = SB.ToString();
