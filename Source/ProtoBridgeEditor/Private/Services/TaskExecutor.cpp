@@ -151,8 +151,8 @@ void FTaskExecutor::TryLaunchProcess()
 				bHasErrors = true;
 				bWasEmpty = ActiveProcesses.Num() == 0 && TaskQueue.IsEmpty();
 			}
-
-			FProtoBridgeEventBus::Get().BroadcastLog(TEXT("Failed to launch compilation process"), ELogVerbosity::Error);
+			
+			UE_LOG(LogProtoBridge, Error, TEXT("Failed to launch compilation process"));
 			
 			if (bWasEmpty)
 			{
@@ -168,22 +168,33 @@ void FTaskExecutor::TryLaunchProcess()
 
 void FTaskExecutor::Cancel()
 {
-	TArray<TSharedPtr<FMonitoredProcess>> ToCancel;
+	TArray<TSharedPtr<FMonitoredProcess>> LocalProcsToCancel;
+	bool bImmediateFinalizeNeeded = false;
+
 	{
 		FScopeLock Lock(&StateMutex);
 		bIsCancelled = true;
-		
 		TaskQueue.Empty();
 		
-		ToCancel = ActiveProcesses;
+		LocalProcsToCancel = ActiveProcesses;
+
+		if (bIsRunning && LocalProcsToCancel.Num() == 0)
+		{
+			bImmediateFinalizeNeeded = true;
+		}
 	}
 
-	for (auto& Proc : ToCancel)
+	for (auto& Proc : LocalProcsToCancel)
 	{
 		if (Proc.IsValid())
 		{
 			Proc->Cancel(true);
 		}
+	}
+
+	if (bImmediateFinalizeNeeded)
+	{
+		StartNextTask();
 	}
 }
 
@@ -196,7 +207,10 @@ bool FTaskExecutor::IsRunning() const
 void FTaskExecutor::HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> ProcWeak)
 {
 	if (bIsTearingDown) return;
-	FProtoBridgeEventBus::Get().BroadcastLog(Output, ELogVerbosity::Display);
+	if (!Output.IsEmpty())
+	{
+		FProtoBridgeEventBus::Get().BroadcastLog(Output, ELogVerbosity::Display);
+	}
 }
 
 void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess> ProcWeak)
@@ -205,6 +219,7 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 
 	FCompilationTask CompletedTask;
 	bool bFound = false;
+	TSharedPtr<FMonitoredProcess> ProcessToRelease;
 
 	{
 		FScopeLock Lock(&StateMutex);
@@ -215,6 +230,7 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 			CompletedTask = ProcessToTaskMap.FindChecked(Proc);
 			ProcessToTaskMap.Remove(Proc);
 			ActiveProcesses.Remove(Proc);
+			ProcessToRelease = Proc;
 			bFound = true;
 			
 			if (ReturnCode != 0)
@@ -222,6 +238,13 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 				bHasErrors = true;
 			}
 		}
+	}
+
+	if (ProcessToRelease.IsValid())
+	{
+		AsyncTask(ENamedThreads::GameThread, [ProcessToRelease]()
+		{
+		});
 	}
 
 	if (bFound)
@@ -237,7 +260,8 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 			}
 			else if (!bWasCancelled) 
 			{
-				FProtoBridgeEventBus::Get().BroadcastLog(FString::Printf(TEXT("Process failed with code %d. Args: %s"), ReturnCode, *CompletedTask.TempArgFilePath), ELogVerbosity::Error);
+				FString ErrorMsg = FString::Printf(TEXT("Process failed with code %d. Args: %s"), ReturnCode, *CompletedTask.TempArgFilePath);
+				FProtoBridgeEventBus::Get().BroadcastLog(ErrorMsg, ELogVerbosity::Error);
 			}
 
 			if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
@@ -256,5 +280,6 @@ void FTaskExecutor::Finalize(bool bSuccess, const FString& Message)
 		bIsRunning = false;
 	}
 	
+	OnFinished.ExecuteIfBound();
 	FProtoBridgeEventBus::Get().BroadcastCompilationFinished(bSuccess, Message);
 }

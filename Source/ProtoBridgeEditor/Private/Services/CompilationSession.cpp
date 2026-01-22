@@ -5,6 +5,7 @@
 #include "Misc/ScopeLock.h"
 #include "Async/Async.h"
 #include "HAL/PlatformProcess.h"
+#include "ProtoBridgeDefs.h"
 
 FCompilationSession::FCompilationSession()
 	: bIsActive(false)
@@ -19,6 +20,7 @@ FCompilationSession::FCompilationSession()
 
 FCompilationSession::~FCompilationSession()
 {
+	UE_LOG(LogProtoBridge, Verbose, TEXT("FCompilationSession: Destructor"));
 	bIsTearingDown = true;
 	Cancel();
 	WaitForCompletion();
@@ -64,6 +66,7 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 
 void FCompilationSession::Cancel()
 {
+	UE_LOG(LogProtoBridge, Display, TEXT("FCompilationSession: Cancel requested"));
 	CancellationFlag = true;
 
 	TSharedPtr<FTaskExecutor> ExecutorToCancel;
@@ -84,7 +87,9 @@ void FCompilationSession::WaitForCompletion()
 	{
 		if (IsRunning())
 		{
+			UE_LOG(LogProtoBridge, Display, TEXT("FCompilationSession: Waiting for completion event..."));
 			CompletionEvent->Wait();
+			UE_LOG(LogProtoBridge, Display, TEXT("FCompilationSession: Completion event received."));
 		}
 	}
 }
@@ -145,7 +150,17 @@ void FCompilationSession::OnPlanningCompleted(FCompilationPlan Plan, int32 MaxCo
 	FProtoBridgeEventBus::Get().BroadcastLog(FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num()), ELogVerbosity::Display);
 
 	TSharedPtr<FTaskExecutor> NewExecutor = ExecutorFactory(MaxConcurrentProcesses);
-	
+
+	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
+	NewExecutor->OnFinished.BindLambda([WeakSelf]()
+	{
+		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
+		{
+			UE_LOG(LogProtoBridge, Verbose, TEXT("FCompilationSession: Executor finished delegate called"));
+			Self->FinishSession();
+		}
+	});
+
 	bool bShouldStart = false;
 	{
 		FScopeLock Lock(&SessionMutex);
@@ -169,6 +184,7 @@ void FCompilationSession::OnPlanningCompleted(FCompilationPlan Plan, int32 MaxCo
 
 void FCompilationSession::FinishSession()
 {
+	UE_LOG(LogProtoBridge, Verbose, TEXT("FCompilationSession: Finishing session"));
 	{
 		FScopeLock Lock(&SessionMutex);
 		bIsActive = false;

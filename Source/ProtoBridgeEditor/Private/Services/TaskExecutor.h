@@ -8,6 +8,8 @@
 class FTaskExecutor : public TSharedFromThis<FTaskExecutor>
 {
 public:
+	DECLARE_DELEGATE(FOnExecutorFinishedDelegate);
+
 	FTaskExecutor(int32 InMaxConcurrentProcesses);
 	~FTaskExecutor();
 
@@ -15,6 +17,8 @@ public:
 	void Cancel();
 	
 	bool IsRunning() const;
+
+	FOnExecutorFinishedDelegate OnFinished;
 
 private:
 	void StartNextTask();

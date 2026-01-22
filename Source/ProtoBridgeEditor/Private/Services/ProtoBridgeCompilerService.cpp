@@ -3,6 +3,7 @@
 #include "Services/ProtoBridgeEventBus.h"
 #include "ProtoBridgeDefs.h"
 #include "HAL/PlatformTime.h"
+#include "Async/Async.h"
 
 FProtoBridgeCompilerService::FProtoBridgeCompilerService()
 	: SessionStartTime(0.0)
@@ -22,10 +23,17 @@ FProtoBridgeCompilerService::~FProtoBridgeCompilerService()
 
 void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Config)
 {
+	if (!IsInGameThread())
+	{
+		UE_LOG(LogProtoBridge, Error, TEXT("Compile must be called from GameThread"));
+		return;
+	}
+
 	FScopeLock Lock(&ServiceMutex);
 	
 	if (CurrentSession.IsValid() && CurrentSession->IsRunning())
 	{
+		UE_LOG(LogProtoBridge, Warning, TEXT("Compilation already in progress"));
 		return;
 	}
 
@@ -35,6 +43,7 @@ void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Confi
 	if (TickerHandle.IsValid())
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+		TickerHandle.Reset();
 	}
 
 	if (SessionTimeout > 0.0)
@@ -51,16 +60,41 @@ void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Confi
 
 void FProtoBridgeCompilerService::Cancel()
 {
-	FScopeLock Lock(&ServiceMutex);
-	if (TickerHandle.IsValid())
+	TSharedPtr<FCompilationSession> SessionToCancel;
 	{
-		FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
-		TickerHandle.Reset();
+		FScopeLock Lock(&ServiceMutex);
+		SessionToCancel = CurrentSession;
 	}
 
-	if (CurrentSession.IsValid())
+	if (SessionToCancel.IsValid())
 	{
-		CurrentSession->Cancel();
+		SessionToCancel->Cancel();
+	}
+
+	if (IsInGameThread())
+	{
+		FScopeLock Lock(&ServiceMutex);
+		if (TickerHandle.IsValid())
+		{
+			FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+			TickerHandle.Reset();
+		}
+	}
+	else
+	{
+		TWeakPtr<FProtoBridgeCompilerService> WeakSelf = AsShared();
+		AsyncTask(ENamedThreads::GameThread, [WeakSelf]()
+		{
+			if (TSharedPtr<FProtoBridgeCompilerService> Self = WeakSelf.Pin())
+			{
+				FScopeLock Lock(&Self->ServiceMutex);
+				if (Self->TickerHandle.IsValid())
+				{
+					FTSTicker::GetCoreTicker().RemoveTicker(Self->TickerHandle);
+					Self->TickerHandle.Reset();
+				}
+			}
+		});
 	}
 }
 
@@ -86,13 +120,19 @@ bool FProtoBridgeCompilerService::IsCompiling() const
 
 void FProtoBridgeCompilerService::OnCompilationFinished(bool bSuccess, const FString& Message)
 {
-	FScopeLock Lock(&ServiceMutex);
-	if (TickerHandle.IsValid())
+	TWeakPtr<FProtoBridgeCompilerService> WeakSelf = AsShared();
+	AsyncTask(ENamedThreads::GameThread, [WeakSelf]()
 	{
-		FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
-		TickerHandle.Reset();
-	}
-	CurrentSession.Reset();
+		if (TSharedPtr<FProtoBridgeCompilerService> Self = WeakSelf.Pin())
+		{
+			FScopeLock Lock(&Self->ServiceMutex);
+			if (Self->TickerHandle.IsValid())
+			{
+				FTSTicker::GetCoreTicker().RemoveTicker(Self->TickerHandle);
+				Self->TickerHandle.Reset();
+			}
+		}
+	});
 }
 
 bool FProtoBridgeCompilerService::OnTimeoutTick(float Delta)
@@ -115,7 +155,7 @@ bool FProtoBridgeCompilerService::OnTimeoutTick(float Delta)
 
 	if (bShouldCancel)
 	{
-		FProtoBridgeEventBus::Get().BroadcastLog(TEXT("Compilation timed out. Cancelling..."), ELogVerbosity::Error);
+		UE_LOG(LogProtoBridge, Error, TEXT("Compilation timed out (> %.1fs). Cancelling..."), SessionTimeout);
 		Cancel();
 		return false;
 	}
