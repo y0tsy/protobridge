@@ -29,6 +29,7 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 	
 	SB << TEXT("--plugin=protoc-gen-ue=") << SafePluginPath << TEXT("\n");
 	SB << TEXT("--ue_out=") << SafeDestDir << TEXT("\n");
+	SB << TEXT("--cpp_out=") << SafeDestDir << TEXT("\n");
 	SB << TEXT("--proto_path=") << SafeSourceDir << TEXT("\n");
 
 	if (!Config.ApiMacro.IsEmpty())
@@ -39,6 +40,7 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 			return false;
 		}
 		SB << TEXT("--ue_opt=dllexport_macro=") << Config.ApiMacro << TEXT("\n");
+		//SB << TEXT("--cpp_opt=dllexport_decl=") << Config.ApiMacro << TEXT("\n");
 	}
 
 	for (const FString& File : Files)
