@@ -79,6 +79,7 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 					Task.DestinationDir = Dest;
 					Task.Arguments = FString::Printf(TEXT("@\"%s\""), *TempArgFilePath);
 					Task.TempArgFilePath = TempArgFilePath;
+					Task.InputFiles = Files; 
 					Plan.Tasks.Add(MoveTemp(Task));
 				}
 				else

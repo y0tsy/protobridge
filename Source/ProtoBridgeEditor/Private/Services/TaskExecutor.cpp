@@ -1,6 +1,7 @@
 ﻿#include "Services/TaskExecutor.h"
 #include "Services/ProtoBridgeFileManager.h"
 #include "Services/ProtoBridgeEventBus.h"
+#include "Services/GeneratedCodePostProcessor.h"
 #include "Misc/ScopeLock.h"
 #include "Async/Async.h"
 #include "ProtoBridgeDefs.h"
@@ -256,6 +257,7 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 		{
 			if (ReturnCode == 0)
 			{
+				FGeneratedCodePostProcessor::ProcessTaskFiles(CompletedTask.SourceDir, CompletedTask.DestinationDir, CompletedTask.InputFiles);
 				FProtoBridgeFileManager::DeleteFile(CompletedTask.TempArgFilePath);
 			}
 			else if (!bWasCancelled) 

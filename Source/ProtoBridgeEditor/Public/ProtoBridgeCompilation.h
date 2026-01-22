@@ -9,6 +9,7 @@ struct FCompilationTask
 	FString TempArgFilePath;
 	FString ProtocPath;
 	FString Arguments;
+	TArray<FString> InputFiles;
 };
 
 struct FCompilationPlan
