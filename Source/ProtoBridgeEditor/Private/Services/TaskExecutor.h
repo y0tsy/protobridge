@@ -4,6 +4,7 @@
 #include "ProtoBridgeCompilation.h"
 #include "Misc/MonitoredProcess.h"
 #include "Containers/Queue.h"
+#include "Tasks/Pipe.h"
 
 class FTaskExecutor : public TSharedFromThis<FTaskExecutor>
 {
@@ -21,13 +22,12 @@ public:
 	FOnExecutorFinishedDelegate OnFinished;
 
 private:
-	void StartNextTask();
+	void TryLaunchProcess();
 	void HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> ProcWeak);
 	void HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess> ProcWeak);
 	void Finalize(bool bSuccess, const FString& Message);
-	void TryLaunchProcess();
 
-	mutable FCriticalSection StateMutex;
+	UE::Tasks::FPipe Pipe;
 	
 	TQueue<FCompilationTask> TaskQueue;
 	TArray<TSharedPtr<FMonitoredProcess>> ActiveProcesses;
@@ -35,8 +35,7 @@ private:
 	
 	int32 MaxConcurrentProcesses;
 	
-	bool bIsRunning;
+	TAtomic<bool> bIsRunning;
 	bool bIsCancelled;
 	bool bHasErrors;
-	TAtomic<bool> bIsTearingDown;
 };
