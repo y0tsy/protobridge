@@ -53,15 +53,20 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 	}
 	
 	FProtoBridgeEventBus::Get().BroadcastCompilationStarted();
+	
+	FProtoBridgeEventBus::Get().BroadcastLog(TEXT("Starting discovery..."), ELogVerbosity::Display);
 
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
-	Async(EAsyncExecution::ThreadPool, [WeakSelf, Config]()
+	
+	UE::Tasks::TTask<FCompilationPlan> PlanTask = FCompilationPlanner::LaunchPlan(Config, &CancellationFlag);
+
+	UE::Tasks::Launch(UE_SOURCE_LOCATION, [WeakSelf, PlanTask, Config]() mutable
 	{
 		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
 		{
-			Self->RunPlanning(Config);
+			Self->OnPlanningCompleted(PlanTask.GetResult(), Config.MaxConcurrentProcesses);
 		}
-	});
+	}, PlanTask);
 }
 
 void FCompilationSession::Cancel()
@@ -100,37 +105,12 @@ bool FCompilationSession::IsRunning() const
 	return bIsActive;
 }
 
-void FCompilationSession::RunPlanning(const FProtoBridgeConfiguration& Config)
-{
-	if (CancellationFlag || bIsTearingDown)
-	{
-		FinishSession();
-		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Operation canceled"));
-		return;
-	}
-
-	FProtoBridgeEventBus::Get().BroadcastLog(TEXT("Starting discovery..."), ELogVerbosity::Display);
-	
-	FCompilationPlan Plan = FCompilationPlanner::GeneratePlan(Config, CancellationFlag);
-
-	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
-	int32 MaxProcs = Config.MaxConcurrentProcesses;
-
-	AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [WeakSelf, Plan = MoveTemp(Plan), MaxProcs]() mutable
-	{
-		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
-		{
-			Self->OnPlanningCompleted(MoveTemp(Plan), MaxProcs);
-		}
-	});
-}
-
 void FCompilationSession::OnPlanningCompleted(FCompilationPlan Plan, int32 MaxConcurrentProcesses)
 {
 	if (Plan.bWasCancelled || CancellationFlag || bIsTearingDown)
 	{
 		FinishSession();
-		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Operation canceled during discovery"));
+		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Operation canceled"));
 		return;
 	}
 

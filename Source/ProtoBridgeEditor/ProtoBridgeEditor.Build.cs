@@ -26,6 +26,7 @@ public class ProtoBridgeEditor : ModuleRules
 				"DeveloperSettings",
 				"Projects",
 				"MessageLog",
+				"EditorSubsystem"
 			}
 		);
 	}

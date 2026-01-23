@@ -43,8 +43,11 @@ void FTaskExecutor::Execute(TArray<FCompilationTask>&& InTasks)
 
 void FTaskExecutor::StartNextTask()
 {
+	if (bIsTearingDown) return;
+
 	TWeakPtr<FTaskExecutor> WeakSelf = AsShared();
-	AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [WeakSelf]()
+
+	UE::Tasks::Launch(UE_SOURCE_LOCATION, [WeakSelf]()
 	{
 		if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
 		{
@@ -241,23 +244,26 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 		}
 	}
 
-	if (ProcessToRelease.IsValid())
-	{
-		AsyncTask(ENamedThreads::GameThread, [ProcessToRelease]()
-		{
-		});
-	}
-
 	if (bFound)
 	{
 		TWeakPtr<FTaskExecutor> WeakSelf = AsShared();
 		bool bWasCancelled = bIsCancelled;
 
-		AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [WeakSelf, CompletedTask, ReturnCode, bWasCancelled]()
+		UE::Tasks::TTask<void> PostProcessTask;
+
+		if (ReturnCode == 0)
+		{
+			PostProcessTask = FGeneratedCodePostProcessor::LaunchProcessTaskFiles(CompletedTask.SourceDir, CompletedTask.DestinationDir, CompletedTask.InputFiles);
+		}
+		else
+		{
+			PostProcessTask = UE::Tasks::MakeCompletedTask<void>();
+		}
+
+		UE::Tasks::Launch(UE_SOURCE_LOCATION, [WeakSelf, CompletedTask, ReturnCode, bWasCancelled]()
 		{
 			if (ReturnCode == 0)
 			{
-				FGeneratedCodePostProcessor::ProcessTaskFiles(CompletedTask.SourceDir, CompletedTask.DestinationDir, CompletedTask.InputFiles);
 				FProtoBridgeFileManager::DeleteFile(CompletedTask.TempArgFilePath);
 			}
 			else if (!bWasCancelled) 
@@ -270,7 +276,7 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 			{
 				Self->StartNextTask();
 			}
-		});
+		}, PostProcessTask);
 	}
 }
 

@@ -5,7 +5,15 @@
 #include "HAL/FileManager.h"
 #include "ProtoBridgeDefs.h"
 
-FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfiguration& Config, const TAtomic<bool>& CancellationFlag)
+UE::Tasks::TTask<FCompilationPlan> FCompilationPlanner::LaunchPlan(const FProtoBridgeConfiguration& Config, const TAtomic<bool>* CancellationFlag)
+{
+	return UE::Tasks::Launch(UE_SOURCE_LOCATION, [Config, CancellationFlag]()
+	{
+		return GeneratePlanInternal(Config, CancellationFlag);
+	}, UE::Tasks::ETaskPriority::BackgroundNormal);
+}
+
+FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeConfiguration& Config, const TAtomic<bool>* CancellationFlag)
 {
 	FCompilationPlan Plan;
 	FCommandBuilder CommandBuilder;
@@ -18,7 +26,7 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 
 	if (Protoc.IsEmpty() || !IFileManager::Get().FileExists(*Protoc))
 	{
-		FString ErrorMsg = FString::Printf(TEXT("Protoc executable not found. Searched in: %s and custom path."), *Config.Environment.PluginDirectory);
+		FString ErrorMsg = FString::Printf(TEXT("Protoc executable not found. Searched in: %s"), *Config.Environment.PluginDirectory);
 		Plan.Errors.Add(ErrorMsg);
 		UE_LOG(LogProtoBridge, Error, TEXT("%s"), *ErrorMsg);
 		return Plan;
@@ -26,7 +34,7 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 
 	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
 	{
-		if (CancellationFlag)
+		if (CancellationFlag && *CancellationFlag)
 		{
 			Plan.bWasCancelled = true;
 			break;
@@ -37,26 +45,19 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 
 		if (Source.IsEmpty() || Dest.IsEmpty())
 		{
-			UE_LOG(LogProtoBridge, Warning, TEXT("Skipping mapping due to empty source or destination after resolution. Raw Source: %s, Raw Dest: %s"), *Mapping.SourcePath.Path, *Mapping.DestinationPath.Path);
 			continue;
 		}
 
-		if (!FProtoBridgePathHelpers::IsPathSafe(Source, Config.Environment))
+		if (!FProtoBridgePathHelpers::IsPathSafe(Source, Config.Environment) || !FProtoBridgePathHelpers::IsPathSafe(Dest, Config.Environment))
 		{
-			Plan.Errors.Add(FString::Printf(TEXT("Security Error: Source path is unsafe or forbidden: %s"), *Source));
-			continue;
-		}
-
-		if (!FProtoBridgePathHelpers::IsPathSafe(Dest, Config.Environment))
-		{
-			Plan.Errors.Add(FString::Printf(TEXT("Security Error: Destination path is unsafe or forbidden: %s"), *Dest));
+			Plan.Errors.Add(FString::Printf(TEXT("Security Error: Unsafe path detected. Source: %s, Dest: %s"), *Source, *Dest));
 			continue;
 		}
 
 		TArray<FString> Files;
-		if (!FProtoBridgeFileScanner::FindProtoFiles(Source, Mapping.bRecursive, Mapping.ExcludePatterns, Files, CancellationFlag))
+		if (!FProtoBridgeFileScanner::FindProtoFiles(Source, Mapping.bRecursive, Mapping.ExcludePatterns, Files, *CancellationFlag))
 		{
-			if (CancellationFlag)
+			if (CancellationFlag && *CancellationFlag)
 			{
 				Plan.bWasCancelled = true;
 				break;
@@ -89,12 +90,8 @@ FCompilationPlan FCompilationPlanner::GeneratePlan(const FProtoBridgeConfigurati
 			}
 			else
 			{
-				Plan.Errors.Add(FString::Printf(TEXT("Failed to build arguments for %s. Check path characters."), *Source));
+				Plan.Errors.Add(FString::Printf(TEXT("Failed to build arguments for %s"), *Source));
 			}
-		}
-		else
-		{
-			UE_LOG(LogProtoBridge, Display, TEXT("No proto files found in source directory: %s"), *Source);
 		}
 	}
 	return Plan;

@@ -1,8 +1,7 @@
 ﻿#include "ProtoBridgeEditorModule.h"
 #include "ProtoBridgeEditorStyle.h" 
 #include "ProtoBridgeDefs.h"
-#include "Interfaces/IProtoBridgeService.h"
-#include "Services/ProtoBridgeCompilerService.h"
+#include "Subsystems/ProtoBridgeCompilerSubsystem.h"
 #include "Services/ProtoBridgeUtils.h"
 #include "UI/ProtoBridgeUIManager.h"
 #include "Settings/ProtoBridgeSettings.h"
@@ -12,7 +11,7 @@
 #include "Interfaces/IPluginManager.h"
 #include "Async/Async.h"
 #include "Services/ProtoBridgeFileManager.h"
-#include "HAL/PlatformProcess.h"
+#include "Editor.h"
 
 #define LOCTEXT_NAMESPACE "FProtoBridgeEditorModule"
 
@@ -27,7 +26,6 @@ void FProtoBridgeEditorModule::StartupModule()
 		FProtoBridgeFileManager::CleanupOldTempFiles(TempDir, FProtoBridgeDefs::MaxTempFileAgeSeconds);
 	});
 
-	CompilerService = MakeShared<FProtoBridgeCompilerService>();
 	UIManager = MakeShared<FProtoBridgeUIManager>();
 	UIManager->Initialize();
 
@@ -44,18 +42,6 @@ void FProtoBridgeEditorModule::ShutdownModule()
 		UIManager->Shutdown();
 		UIManager.Reset();
 	}
-
-	if (CompilerService.IsValid())
-	{
-		CompilerService->Cancel();
-		CompilerService->WaitForCompletion();
-		CompilerService.Reset();
-	}
-}
-
-TSharedPtr<IProtoBridgeService> FProtoBridgeEditorModule::GetService() const
-{
-	return CompilerService;
 }
 
 void FProtoBridgeEditorModule::RegisterMenus()
@@ -68,7 +54,16 @@ void FProtoBridgeEditorModule::RegisterMenus()
 		"ProtoBridgeCompile",
 		FUIAction(
 			FExecuteAction::CreateRaw(this, &FProtoBridgeEditorModule::OnCompileButtonClicked),
-			FCanExecuteAction::CreateLambda([this]() { return CompilerService.IsValid() && !CompilerService->IsCompiling(); })
+			FCanExecuteAction::CreateLambda([]() { 
+				if (GEditor)
+				{
+					if (UProtoBridgeCompilerSubsystem* Subsystem = GEditor->GetEditorSubsystem<UProtoBridgeCompilerSubsystem>())
+					{
+						return !Subsystem->IsCompiling();
+					}
+				}
+				return false;
+			})
 		),
 		LOCTEXT("CompileButtonLabel", "ProtoBridge"),
 		LOCTEXT("CompileButtonTooltip", "Compile all Proto files"),
@@ -80,7 +75,10 @@ void FProtoBridgeEditorModule::RegisterMenus()
 
 void FProtoBridgeEditorModule::OnCompileButtonClicked()
 {
-	if (CompilerService.IsValid())
+	if (!GEditor) return;
+
+	UProtoBridgeCompilerSubsystem* Subsystem = GEditor->GetEditorSubsystem<UProtoBridgeCompilerSubsystem>();
+	if (Subsystem)
 	{
 		const UProtoBridgeSettings* Settings = GetDefault<UProtoBridgeSettings>();
 		
@@ -104,7 +102,7 @@ void FProtoBridgeEditorModule::OnCompileButtonClicked()
 			Config.Environment.PluginLocations.Add(Plugin->GetName(), Plugin->GetBaseDir());
 		}
 
-		CompilerService->Compile(Config);
+		Subsystem->Compile(Config);
 	}
 }
 

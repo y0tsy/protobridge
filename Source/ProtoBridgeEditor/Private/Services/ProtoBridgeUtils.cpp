@@ -1,6 +1,7 @@
 ﻿#include "Services/ProtoBridgeUtils.h"
 #include "ProtoBridgeDefs.h"
 #include "Misc/Paths.h"
+#include "Misc/StringBuilder.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
 #include "HAL/PlatformFileManager.h"
@@ -103,44 +104,57 @@ FString FProtoBridgePathHelpers::FindBinaryPath(const FString& BaseDir, const FS
 	{
 		NameToSearch += TEXT(".exe");
 	}
-#endif
-
-	TArray<FString> SearchPaths;
-	SearchPaths.Add(BaseDir / TEXT("Source") / TEXT("ProtoBridgeThirdParty") / TEXT("bin"));
-	SearchPaths.Add(BaseDir / TEXT("Binaries") / TEXT("ThirdParty"));
-	SearchPaths.Add(BaseDir / TEXT("Resources") / TEXT("Binaries"));
-
-#if PLATFORM_WINDOWS
-	FString Platform = TEXT("Win64");
+	const TCHAR* Platform = TEXT("Win64");
 #elif PLATFORM_MAC
-	FString Platform = TEXT("Mac");
+	const TCHAR* Platform = TEXT("Mac");
 #elif PLATFORM_LINUX
-	FString Platform = TEXT("Linux");
+	const TCHAR* Platform = TEXT("Linux");
 #else
-	FString Platform = TEXT("Unknown");
+	const TCHAR* Platform = TEXT("Unknown");
 #endif
 
-	for (const FString& Path : SearchPaths)
+	const TCHAR* RelPaths[] = {
+		TEXT("Source/ProtoBridgeThirdParty/bin"),
+		TEXT("Binaries/ThirdParty"),
+		TEXT("Resources/Binaries")
+	};
+
+	TStringBuilder<260> SB;
+
+	for (const TCHAR* RelPath : RelPaths)
 	{
-		FString FullPath = Path / Platform / NameToSearch;
-		
-		if (IFileManager::Get().FileExists(*FullPath))
+		SB.Reset();
+		SB << BaseDir;
+		if (SB.Len() > 0 && SB.LastChar() != TEXT('/'))
 		{
-			NormalizePath(FullPath);
-			UE_LOG(LogProtoBridge, Display, TEXT("Found binary at: %s"), *FullPath);
-			return FullPath;
+			SB << TEXT('/');
 		}
 		
-		FullPath = Path / NameToSearch;
-		if (IFileManager::Get().FileExists(*FullPath))
+		int32 BaseLen = SB.Len();
+
+		SB << RelPath << TEXT('/') << Platform << TEXT('/') << NameToSearch;
+		
+		if (IFileManager::Get().FileExists(SB.ToString()))
 		{
-			NormalizePath(FullPath);
-			UE_LOG(LogProtoBridge, Display, TEXT("Found binary at: %s"), *FullPath);
-			return FullPath;
+			FString Result = SB.ToString();
+			NormalizePath(Result);
+			UE_LOG(LogProtoBridge, Display, TEXT("Found binary at: %s"), *Result);
+			return Result;
+		}
+		
+		SB.RemoveAt(BaseLen, SB.Len() - BaseLen);
+		SB << RelPath << TEXT('/') << NameToSearch;
+
+		if (IFileManager::Get().FileExists(SB.ToString()))
+		{
+			FString Result = SB.ToString();
+			NormalizePath(Result);
+			UE_LOG(LogProtoBridge, Display, TEXT("Found binary at: %s"), *Result);
+			return Result;
 		}
 	}
 
-	UE_LOG(LogProtoBridge, Warning, TEXT("Failed to find binary '%s' in %d search paths based on %s"), *NameToSearch, SearchPaths.Num(), *BaseDir);
+	UE_LOG(LogProtoBridge, Warning, TEXT("Failed to find binary '%s' in standard paths based on %s"), *NameToSearch, *BaseDir);
 	return FString();
 }
 

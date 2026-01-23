@@ -1,36 +1,34 @@
-﻿#include "Services/ProtoBridgeCompilerService.h"
+﻿#include "Subsystems/ProtoBridgeCompilerSubsystem.h"
 #include "Services/CompilationSession.h"
 #include "Services/ProtoBridgeEventBus.h"
 #include "ProtoBridgeDefs.h"
 #include "HAL/PlatformTime.h"
 #include "Async/Async.h"
 
-FProtoBridgeCompilerService::FProtoBridgeCompilerService()
-	: SessionStartTime(0.0)
-	, SessionTimeout(0.0)
+void UProtoBridgeCompilerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
+	Super::Initialize(Collection);
+	
 	FinishedHandle = FProtoBridgeEventBus::Get().RegisterOnCompilationFinished(
-		FOnProtoBridgeCompilationFinished::FDelegate::CreateRaw(this, &FProtoBridgeCompilerService::OnCompilationFinished)
+		FOnProtoBridgeCompilationFinished::FDelegate::CreateUObject(this, &UProtoBridgeCompilerSubsystem::OnCompilationFinished)
 	);
 }
 
-FProtoBridgeCompilerService::~FProtoBridgeCompilerService()
+void UProtoBridgeCompilerSubsystem::Deinitialize()
 {
 	FProtoBridgeEventBus::Get().UnregisterOnCompilationFinished(FinishedHandle);
 	Cancel();
 	WaitForCompletion();
+
+	Super::Deinitialize();
 }
 
-void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Config)
+void UProtoBridgeCompilerSubsystem::Compile(const FProtoBridgeConfiguration& Config)
 {
-	if (!IsInGameThread())
-	{
-		UE_LOG(LogProtoBridge, Error, TEXT("Compile must be called from GameThread"));
-		return;
-	}
+	check(IsInGameThread());
 
 	FScopeLock Lock(&ServiceMutex);
-	
+
 	if (CurrentSession.IsValid() && CurrentSession->IsRunning())
 	{
 		UE_LOG(LogProtoBridge, Warning, TEXT("Compilation already in progress"));
@@ -49,7 +47,7 @@ void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Confi
 	if (SessionTimeout > 0.0)
 	{
 		TickerHandle = FTSTicker::GetCoreTicker().AddTicker(
-			FTickerDelegate::CreateRaw(this, &FProtoBridgeCompilerService::OnTimeoutTick),
+			FTickerDelegate::CreateUObject(this, &UProtoBridgeCompilerSubsystem::OnTimeoutTick),
 			1.0f
 		);
 	}
@@ -58,7 +56,7 @@ void FProtoBridgeCompilerService::Compile(const FProtoBridgeConfiguration& Confi
 	CurrentSession->Start(Config);
 }
 
-void FProtoBridgeCompilerService::Cancel()
+void UProtoBridgeCompilerSubsystem::Cancel()
 {
 	TSharedPtr<FCompilationSession> SessionToCancel;
 	{
@@ -82,10 +80,10 @@ void FProtoBridgeCompilerService::Cancel()
 	}
 	else
 	{
-		TWeakPtr<FProtoBridgeCompilerService> WeakSelf = AsShared();
+		TWeakObjectPtr<UProtoBridgeCompilerSubsystem> WeakSelf(this);
 		AsyncTask(ENamedThreads::GameThread, [WeakSelf]()
 		{
-			if (TSharedPtr<FProtoBridgeCompilerService> Self = WeakSelf.Pin())
+			if (UProtoBridgeCompilerSubsystem* Self = WeakSelf.Get())
 			{
 				FScopeLock Lock(&Self->ServiceMutex);
 				if (Self->TickerHandle.IsValid())
@@ -98,32 +96,32 @@ void FProtoBridgeCompilerService::Cancel()
 	}
 }
 
-void FProtoBridgeCompilerService::WaitForCompletion()
+void UProtoBridgeCompilerSubsystem::WaitForCompletion()
 {
 	TSharedPtr<FCompilationSession> SessionToWait;
 	{
 		FScopeLock Lock(&ServiceMutex);
 		SessionToWait = CurrentSession;
 	}
-	
+
 	if (SessionToWait.IsValid())
 	{
 		SessionToWait->WaitForCompletion();
 	}
 }
 
-bool FProtoBridgeCompilerService::IsCompiling() const
+bool UProtoBridgeCompilerSubsystem::IsCompiling() const
 {
 	FScopeLock Lock(&ServiceMutex);
 	return CurrentSession.IsValid() && CurrentSession->IsRunning();
 }
 
-void FProtoBridgeCompilerService::OnCompilationFinished(bool bSuccess, const FString& Message)
+void UProtoBridgeCompilerSubsystem::OnCompilationFinished(bool bSuccess, const FString& Message)
 {
-	TWeakPtr<FProtoBridgeCompilerService> WeakSelf = AsShared();
+	TWeakObjectPtr<UProtoBridgeCompilerSubsystem> WeakSelf(this);
 	AsyncTask(ENamedThreads::GameThread, [WeakSelf]()
 	{
-		if (TSharedPtr<FProtoBridgeCompilerService> Self = WeakSelf.Pin())
+		if (UProtoBridgeCompilerSubsystem* Self = WeakSelf.Get())
 		{
 			FScopeLock Lock(&Self->ServiceMutex);
 			if (Self->TickerHandle.IsValid())
@@ -135,7 +133,7 @@ void FProtoBridgeCompilerService::OnCompilationFinished(bool bSuccess, const FSt
 	});
 }
 
-bool FProtoBridgeCompilerService::OnTimeoutTick(float Delta)
+bool UProtoBridgeCompilerSubsystem::OnTimeoutTick(float Delta)
 {
 	bool bShouldCancel = false;
 	{
@@ -149,7 +147,7 @@ bool FProtoBridgeCompilerService::OnTimeoutTick(float Delta)
 		}
 		else
 		{
-			return false; 
+			return false;
 		}
 	}
 

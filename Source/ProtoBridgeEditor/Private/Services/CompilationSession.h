@@ -5,6 +5,7 @@
 #include "ProtoBridgeConfiguration.h"
 #include "Templates/Function.h"
 #include "HAL/Event.h"
+#include "Tasks/Task.h"
 
 class FTaskExecutor;
 
@@ -23,7 +24,6 @@ public:
 	bool IsRunning() const;
 
 private:
-	void RunPlanning(const FProtoBridgeConfiguration& Config);
 	void OnPlanningCompleted(FCompilationPlan Plan, int32 MaxConcurrentProcesses);
 	void FinishSession();
 	

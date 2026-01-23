@@ -1,16 +1,21 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "EditorSubsystem.h"
 #include "Interfaces/IProtoBridgeService.h"
 #include "Containers/Ticker.h"
+#include "ProtoBridgeCompilerSubsystem.generated.h"
 
 class FCompilationSession;
 
-class FProtoBridgeCompilerService : public IProtoBridgeService, public TSharedFromThis<FProtoBridgeCompilerService>
+UCLASS()
+class PROTOBRIDGEEDITOR_API UProtoBridgeCompilerSubsystem : public UEditorSubsystem, public IProtoBridgeService
 {
+	GENERATED_BODY()
+
 public:
-	FProtoBridgeCompilerService();
-	virtual ~FProtoBridgeCompilerService();
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
 
 	virtual void Compile(const FProtoBridgeConfiguration& Config) override;
 	virtual void Cancel() override;
@@ -21,10 +26,10 @@ private:
 	void OnCompilationFinished(bool bSuccess, const FString& Msg);
 	bool OnTimeoutTick(float Delta);
 
-	mutable FCriticalSection ServiceMutex; 
+	mutable FCriticalSection ServiceMutex;
 	TSharedPtr<FCompilationSession> CurrentSession;
 	FDelegateHandle FinishedHandle;
-	
+
 	FTSTicker::FDelegateHandle TickerHandle;
 	double SessionStartTime;
 	double SessionTimeout;

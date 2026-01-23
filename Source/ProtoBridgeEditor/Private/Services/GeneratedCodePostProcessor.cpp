@@ -1,9 +1,18 @@
 ﻿#include "Services/GeneratedCodePostProcessor.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Misc/StringBuilder.h"
 #include "ProtoBridgeDefs.h"
 
-void FGeneratedCodePostProcessor::ProcessTaskFiles(const FString& SourceDir, const FString& DestDir, const TArray<FString>& InputFiles)
+UE::Tasks::TTask<void> FGeneratedCodePostProcessor::LaunchProcessTaskFiles(const FString& SourceDir, const FString& DestDir, const TArray<FString>& InputFiles)
+{
+	return UE::Tasks::Launch(UE_SOURCE_LOCATION, [SourceDir, DestDir, InputFiles]()
+	{
+		ProcessTaskFilesInternal(SourceDir, DestDir, InputFiles);
+	}, UE::Tasks::ETaskPriority::BackgroundHigh);
+}
+
+void FGeneratedCodePostProcessor::ProcessTaskFilesInternal(const FString& SourceDir, const FString& DestDir, const TArray<FString>& InputFiles)
 {
 	FString SafeSourceDir = SourceDir;
 	FPaths::NormalizeDirectoryName(SafeSourceDir);
@@ -65,26 +74,27 @@ void FGeneratedCodePostProcessor::ProcessSingleFile(const FString& FilePath)
 
 void FGeneratedCodePostProcessor::InjectMacroGuards(FString& Content)
 {
-	FString HeaderGuard;
-	HeaderGuard += TEXT("// UE_PROTOBRIDGE_MACRO_GUARD_START\n");
-	HeaderGuard += TEXT("#ifdef check\n");
-	HeaderGuard += TEXT("  #pragma push_macro(\"check\")\n");
-	HeaderGuard += TEXT("  #undef check\n");
-	HeaderGuard += TEXT("#endif\n");
-	HeaderGuard += TEXT("#ifdef verify\n");
-	HeaderGuard += TEXT("  #pragma push_macro(\"verify\")\n");
-	HeaderGuard += TEXT("  #undef verify\n");
-	HeaderGuard += TEXT("#endif\n\n");
+	TStringBuilder<32768> SB;
 
-	FString FooterGuard;
-	FooterGuard += TEXT("\n// UE_PROTOBRIDGE_MACRO_GUARD_END\n");
-	FooterGuard += TEXT("#ifdef check\n");
-	FooterGuard += TEXT("  #pragma pop_macro(\"check\")\n");
-	FooterGuard += TEXT("#endif\n");
-	FooterGuard += TEXT("#ifdef verify\n");
-	FooterGuard += TEXT("  #pragma pop_macro(\"verify\")\n");
-	FooterGuard += TEXT("#endif\n");
+	SB << TEXT("// UE_PROTOBRIDGE_MACRO_GUARD_START\n");
+	SB << TEXT("#ifdef check\n");
+	SB << TEXT("  #pragma push_macro(\"check\")\n");
+	SB << TEXT("  #undef check\n");
+	SB << TEXT("#endif\n");
+	SB << TEXT("#ifdef verify\n");
+	SB << TEXT("  #pragma push_macro(\"verify\")\n");
+	SB << TEXT("  #undef verify\n");
+	SB << TEXT("#endif\n\n");
 
-	Content.InsertAt(0, HeaderGuard);
-	Content.Append(FooterGuard);
+	SB << Content;
+
+	SB << TEXT("\n// UE_PROTOBRIDGE_MACRO_GUARD_END\n");
+	SB << TEXT("#ifdef check\n");
+	SB << TEXT("  #pragma pop_macro(\"check\")\n");
+	SB << TEXT("#endif\n");
+	SB << TEXT("#ifdef verify\n");
+	SB << TEXT("  #pragma pop_macro(\"verify\")\n");
+	SB << TEXT("#endif\n");
+
+	Content = SB.ToString();
 }
