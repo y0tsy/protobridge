@@ -92,27 +92,27 @@ private:
 
 			Ctx.Writer.Print("UProtoBridgeSubsystem* Subsystem = GetSubsystem();\n");
 			Ctx.Writer.Print("if (!Subsystem)\n");
-			FScopedBlock ErrBlock(Ctx.Writer);
-			Ctx.Writer.Print("FGrpcResult ErrorResult;\n");
-			Ctx.Writer.Print("ErrorResult.StatusCode = EGrpcCode::Internal;\n");
-			Ctx.Writer.Print("ErrorResult.StatusMessage = TEXT(\"Subsystem not found\");\n");
-			Ctx.Writer.Print("OnFailure.Broadcast(ErrorResult, $out$());\n", "out", OutputType);
-			Ctx.Writer.Print("SetReadyToDestroy();\n");
-			Ctx.Writer.Print("return;\n");
-			Ctx.Writer.Outdent();
-			Ctx.Writer.Print("}\n\n");
+			{
+				FScopedBlock ErrBlock(Ctx.Writer);
+				Ctx.Writer.Print("FGrpcResult ErrorResult;\n");
+				Ctx.Writer.Print("ErrorResult.StatusCode = EGrpcCode::Internal;\n");
+				Ctx.Writer.Print("ErrorResult.StatusMessage = TEXT(\"Subsystem not found\");\n");
+				Ctx.Writer.Print("OnFailure.Broadcast(ErrorResult, $out$());\n", "out", OutputType);
+				Ctx.Writer.Print("SetReadyToDestroy();\n");
+				Ctx.Writer.Print("return;\n");
+			}
 
 			Ctx.Writer.Print("FGrpcClientThread* Thread = Subsystem->GetClient(TEXT(\"$svc$\"), TEXT(\"localhost:50051\"));\n", "svc", ServiceName);
 			Ctx.Writer.Print("if (!Thread)\n");
-			FScopedBlock ThreadErrBlock(Ctx.Writer);
-			Ctx.Writer.Print("FGrpcResult ErrorResult;\n");
-			Ctx.Writer.Print("ErrorResult.StatusCode = EGrpcCode::Unavailable;\n");
-			Ctx.Writer.Print("ErrorResult.StatusMessage = TEXT(\"Client thread not found or failed to init\");\n");
-			Ctx.Writer.Print("OnFailure.Broadcast(ErrorResult, $out$());\n", "out", OutputType);
-			Ctx.Writer.Print("SetReadyToDestroy();\n");
-			Ctx.Writer.Print("return;\n");
-			Ctx.Writer.Outdent();
-			Ctx.Writer.Print("}\n\n");
+			{
+				FScopedBlock ThreadErrBlock(Ctx.Writer);
+				Ctx.Writer.Print("FGrpcResult ErrorResult;\n");
+				Ctx.Writer.Print("ErrorResult.StatusCode = EGrpcCode::Unavailable;\n");
+				Ctx.Writer.Print("ErrorResult.StatusMessage = TEXT(\"Client thread not found or failed to init\");\n");
+				Ctx.Writer.Print("OnFailure.Broadcast(ErrorResult, $out$());\n", "out", OutputType);
+				Ctx.Writer.Print("SetReadyToDestroy();\n");
+				Ctx.Writer.Print("return;\n");
+			}
 
 			Ctx.Writer.Print("$proto_in$ ProtoRequest;\n", "proto_in", ProtoInputType);
 			Ctx.Writer.Print("Request.ToProto(ProtoRequest);\n\n");
@@ -130,26 +130,29 @@ private:
 			Ctx.Writer.Print("},\n");
 
 			Ctx.Writer.Print("[WeakThis = TWeakObjectPtr<UGrpcBlueprintNode>(this)](const FGrpcResult& Result, const $proto_out$& ProtoResponse)\n", "proto_out", ProtoOutputType);
-			FScopedBlock LambdaBlock(Ctx.Writer);
 			
-			Ctx.Writer.Print("if (UGrpcBlueprintNode* StrongThis = WeakThis.Get())\n");
-			FScopedBlock AliveBlock(Ctx.Writer);
-			Ctx.Writer.Print("$node$* CastedThis = Cast<$node$>(StrongThis);\n", "node", NodeClassName);
-			Ctx.Writer.Print("$out$ UEResponse;\n", "out", OutputType);
-			Ctx.Writer.Print("if (Result.bSuccess)\n");
-			FScopedBlock SuccessBlock(Ctx.Writer);
-			Ctx.Writer.Print("UEResponse.FromProto(ProtoResponse);\n");
-			Ctx.Writer.Print("CastedThis->OnSuccess.Broadcast(Result, UEResponse);\n");
-			Ctx.Writer.Outdent();
-			Ctx.Writer.Print("}\n");
-			Ctx.Writer.Print("else\n");
-			FScopedBlock FailBlock(Ctx.Writer);
-			Ctx.Writer.Print("CastedThis->OnFailure.Broadcast(Result, UEResponse);\n");
-			Ctx.Writer.Outdent();
-			Ctx.Writer.Print("}\n");
-			Ctx.Writer.Print("CastedThis->SetReadyToDestroy();\n");
-			Ctx.Writer.Outdent();
-			Ctx.Writer.Print("}\n");
+			{
+				FScopedBlock LambdaBlock(Ctx.Writer);
+				
+				Ctx.Writer.Print("if (UGrpcBlueprintNode* StrongThis = WeakThis.Get())\n");
+				{
+					FScopedBlock AliveBlock(Ctx.Writer);
+					Ctx.Writer.Print("$node$* CastedThis = Cast<$node$>(StrongThis);\n", "node", NodeClassName);
+					Ctx.Writer.Print("$out$ UEResponse;\n", "out", OutputType);
+					Ctx.Writer.Print("if (Result.bSuccess)\n");
+					{
+						FScopedBlock SuccessBlock(Ctx.Writer);
+						Ctx.Writer.Print("UEResponse.FromProto(ProtoResponse);\n");
+						Ctx.Writer.Print("CastedThis->OnSuccess.Broadcast(Result, UEResponse);\n");
+					}
+					Ctx.Writer.Print("else\n");
+					{
+						FScopedBlock FailBlock(Ctx.Writer);
+						Ctx.Writer.Print("CastedThis->OnFailure.Broadcast(Result, UEResponse);\n");
+					}
+					Ctx.Writer.Print("CastedThis->SetReadyToDestroy();\n");
+				}
+			}
 			
 			Ctx.Writer.Outdent();
 			Ctx.Writer.Print(");\n\n");
