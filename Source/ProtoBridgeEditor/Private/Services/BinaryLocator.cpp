@@ -8,11 +8,10 @@ FString FBinaryLocator::ResolveProtocPath(const FProtoBridgeEnvironmentContext& 
 {
 	if (!Context.ProtocPath.IsEmpty())
 	{
-		if (IFileManager::Get().FileExists(*Context.ProtocPath))
+		FString ResolvedPath = FPathTokenResolver::ResolvePath(Context.ProtocPath, Context);
+		if (IFileManager::Get().FileExists(*ResolvedPath))
 		{
-			FString Path = Context.ProtocPath;
-			FPathTokenResolver::NormalizePath(Path);
-			return Path;
+			return ResolvedPath;
 		}
 	}
 	return FindBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::ProtocExecutableName);
@@ -22,14 +21,46 @@ FString FBinaryLocator::ResolvePluginPath(const FProtoBridgeEnvironmentContext& 
 {
 	if (!Context.PluginPath.IsEmpty())
 	{
-		if (IFileManager::Get().FileExists(*Context.PluginPath))
+		FString ResolvedPath = FPathTokenResolver::ResolvePath(Context.PluginPath, Context);
+		if (IFileManager::Get().FileExists(*ResolvedPath))
 		{
-			FString Path = Context.PluginPath;
-			FPathTokenResolver::NormalizePath(Path);
-			return Path;
+			return ResolvedPath;
 		}
 	}
 	return FindBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::PluginExecutableName);
+}
+
+FString FBinaryLocator::ResolveGrpcPluginPath(const FProtoBridgeEnvironmentContext& Context)
+{
+	return FindBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::GrpcPluginExecutableName);
+}
+
+FString FBinaryLocator::FindStandardIncludePath(const FString& ProtocPath)
+{
+	if (ProtocPath.IsEmpty() || !IFileManager::Get().FileExists(*ProtocPath))
+	{
+		return FString();
+	}
+
+	const FString ProtocDir = FPaths::GetPath(ProtocPath);
+	FString IncludePath = FPaths::Combine(ProtocDir, TEXT("../"), FProtoBridgeDefs::StandardIncludeFolder);
+
+	FPaths::CollapseRelativeDirectories(IncludePath);
+	FPaths::NormalizeDirectoryName(IncludePath);
+
+	if (IFileManager::Get().DirectoryExists(*IncludePath))
+	{
+		return IncludePath;
+	}
+
+	IncludePath = FPaths::Combine(ProtocDir, FProtoBridgeDefs::StandardIncludeFolder);
+	FPaths::NormalizeDirectoryName(IncludePath);
+	if (IFileManager::Get().DirectoryExists(*IncludePath))
+	{
+		return IncludePath;
+	}
+
+	return FString();
 }
 
 FString FBinaryLocator::FindBinaryPath(const FString& BaseDir, const FString& BinaryName)

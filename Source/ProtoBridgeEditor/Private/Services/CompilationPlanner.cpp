@@ -30,12 +30,32 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 		return Plan;
 	}
 
-	FString Protoc = FBinaryLocator::ResolveProtocPath(Config.Environment);
+	const FString Protoc = FBinaryLocator::ResolveProtocPath(Config.Environment);
 
 	if (Protoc.IsEmpty() || !IFileManager::Get().FileExists(*Protoc))
 	{
 		Plan.Diagnostics.Emplace(ELogVerbosity::Error, FString::Printf(TEXT("Protoc executable not found. Searched in: %s"), *Config.Environment.PluginDirectory));
 		return Plan;
+	}
+
+	bool bRequiresGrpc = false;
+	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
+	{
+		if (Mapping.bGenerateGrpc)
+		{
+			bRequiresGrpc = true;
+			break;
+		}
+	}
+
+	if (bRequiresGrpc)
+	{
+		FString GrpcPlugin = FBinaryLocator::ResolveGrpcPluginPath(Config.Environment);
+		if (GrpcPlugin.IsEmpty() || !IFileManager::Get().FileExists(*GrpcPlugin))
+		{
+			Plan.Diagnostics.Emplace(ELogVerbosity::Error, FString::Printf(TEXT("gRPC plugin (%s) not found, but gRPC generation is enabled. Searched in: %s"), *FProtoBridgeDefs::GrpcPluginExecutableName, *Config.Environment.PluginDirectory));
+			return Plan;
+		}
 	}
 
 	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
@@ -64,7 +84,7 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 		if (Files.Num() > 0)
 		{
 			FString ArgsContent;
-			if (CommandBuilder.BuildContent(Config, Source, Dest, Files, ArgsContent))
+			if (CommandBuilder.BuildContent(Config, Mapping, Source, Dest, Files, ArgsContent))
 			{
 				FString TempArgFilePath;
 				if (FProtoBridgeFileManager::WriteArgumentFile(ArgsContent, TempArgFilePath))

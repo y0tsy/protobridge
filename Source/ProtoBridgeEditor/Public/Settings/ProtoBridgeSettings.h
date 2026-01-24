@@ -17,6 +17,9 @@ struct FProtoBridgeMapping
 
 	UPROPERTY(EditAnywhere, Category = "Config")
 	bool bRecursive = true;
+	
+	UPROPERTY(EditAnywhere, Category = "Config", meta = (DisplayName = "Generate gRPC Stubs"))
+	bool bGenerateGrpc = false;
 
 	UPROPERTY(EditAnywhere, Category = "Config")
 	TArray<FString> ExcludePatterns;
