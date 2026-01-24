@@ -10,7 +10,8 @@ public class ProtoBridge : ModuleRules
 			new string[]
 			{
 				"Core",
-				"ProtoBridgeThirdParty"
+				"ProtoBridgeThirdParty",
+				"ProtoBridgeCore"
 			}
 		);
 
