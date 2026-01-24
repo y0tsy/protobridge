@@ -1,6 +1,7 @@
 ﻿#include "GrpcServerThread.h"
 #include "GrpcServerJob.h"
 #include "ProtobufStringUtils.h"
+#include "HAL/RunnableThread.h"
 
 FGrpcServerThread::FGrpcServerThread(const FString& InAddress, const FString& InServerCert, const FString& InPrivateKey)
 	: FGrpcWorkerThread(TEXT("GrpcServerThread"))
@@ -17,6 +18,8 @@ FGrpcServerThread::~FGrpcServerThread()
 
 bool FGrpcServerThread::Init()
 {
+	if (Thread) return true;
+
 	grpc::ServerBuilder Builder;
 
 	std::shared_ptr<grpc::ServerCredentials> Creds;
@@ -38,19 +41,28 @@ bool FGrpcServerThread::Init()
 
 	std::string StdAddr;
 	FProtobufStringUtils::FStringToStdString(Address, StdAddr);
-	Builder.AddListeningPort(StdAddr, Creds);
+	
+	int BoundPort = 0;
+	Builder.AddListeningPort(StdAddr, Creds, &BoundPort);
 
-	Builder.RegisterAsyncGenericService(&GenericService);
+	GenericService = std::make_unique<grpc::AsyncGenericService>();
+	Builder.RegisterAsyncGenericService(GenericService.get());
 	
 	CompletionQueue = Builder.AddCompletionQueue();
 	Server = Builder.BuildAndStart();
 
-	if (!Server)
+	if (!Server || BoundPort == 0)
 	{
+		GenericService.reset();
+		if (Server) Server->Shutdown();
+		Server.reset();
 		return false;
 	}
 
 	bIsRunning = true;
+
+	Thread = FRunnableThread::Create(this, *ThreadName, 0, TPri_Normal);
+
 	return true;
 }
 
@@ -59,15 +71,22 @@ void FGrpcServerThread::Stop()
 	if (Server)
 	{
 		Server->Shutdown();
+		Server.reset();
 	}
+	
+	if (GenericService)
+	{
+		GenericService.reset();
+	}
+
 	FGrpcWorkerThread::Stop();
 }
 
 void FGrpcServerThread::StartGenericLoop(FServiceFinder&& Finder)
 {
-	if (bIsRunning && CompletionQueue)
+	if (bIsRunning && CompletionQueue && GenericService)
 	{
-		FGrpcServerJob* Job = new FGrpcServerJob(&GenericService, CompletionQueue.get(), MoveTemp(Finder));
+		FGrpcServerJob* Job = new FGrpcServerJob(GenericService.get(), CompletionQueue.get(), MoveTemp(Finder));
 		Job->Start();
 	}
 }

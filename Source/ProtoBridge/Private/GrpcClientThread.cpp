@@ -1,5 +1,6 @@
 ﻿#include "GrpcClientThread.h"
 #include "ProtobufStringUtils.h"
+#include "HAL/RunnableThread.h"
 
 FGrpcClientThread::FGrpcClientThread(const FString& InAddress, const FString& InRootCert, const FString& InClientCert, const FString& InPrivateKey)
 	: FGrpcWorkerThread(FString::Printf(TEXT("GrpcClient_%s"), *InAddress))
@@ -16,6 +17,8 @@ FGrpcClientThread::~FGrpcClientThread()
 
 bool FGrpcClientThread::Init()
 {
+	if (Thread) return true;
+
 	if (!FGrpcWorkerThread::Init())
 	{
 		return false;
@@ -52,6 +55,8 @@ bool FGrpcClientThread::Init()
 	FProtobufStringUtils::FStringToStdString(Address, StdAddress);
 
 	Channel = grpc::CreateCustomChannel(StdAddress, Creds, Args);
+
+	Thread = FRunnableThread::Create(this, *ThreadName, 0, TPri_Normal);
 
 	return true;
 }

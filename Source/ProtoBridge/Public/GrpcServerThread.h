@@ -23,6 +23,6 @@ private:
 	FString ServerCert;
 	FString PrivateKey;
 
+	std::unique_ptr<grpc::AsyncGenericService> GenericService;
 	std::unique_ptr<grpc::Server> Server;
-	grpc::AsyncGenericService GenericService;
 };

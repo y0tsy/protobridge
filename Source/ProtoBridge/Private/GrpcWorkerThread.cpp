@@ -6,7 +6,6 @@ FGrpcWorkerThread::FGrpcWorkerThread(const FString& InThreadName)
 	, Thread(nullptr)
 	, bIsRunning(false)
 {
-	Thread = FRunnableThread::Create(this, *ThreadName, 0, TPri_Normal);
 }
 
 FGrpcWorkerThread::~FGrpcWorkerThread()
@@ -21,6 +20,11 @@ FGrpcWorkerThread::~FGrpcWorkerThread()
 
 bool FGrpcWorkerThread::Init()
 {
+	if (CompletionQueue) 
+	{
+		return true;
+	}
+
 	bIsRunning = true;
 	CompletionQueue = std::make_unique<grpc::CompletionQueue>();
 	return true;
