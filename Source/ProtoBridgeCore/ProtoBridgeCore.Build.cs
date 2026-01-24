@@ -1,5 +1,4 @@
 using UnrealBuildTool;
-using System.IO; 
 
 public class ProtoBridgeCore : ModuleRules
 {
@@ -7,7 +6,16 @@ public class ProtoBridgeCore : ModuleRules
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
-        PublicDependencyModuleNames.AddRange(new string[] { "Core", "ProtoBridgeThirdParty", "GameplayTags", "Json" });
-		PrivateDependencyModuleNames.AddRange(new string[] { "CoreUObject", "Engine" }); 
+		PublicDependencyModuleNames.AddRange(new string[] { 
+			"Core", 
+			"ProtoBridgeThirdParty", 
+			"GameplayTags", 
+			"Json" 
+		});
+		
+		PrivateDependencyModuleNames.AddRange(new string[] { 
+			"CoreUObject", 
+			"Engine" 
+		});
 	}
 }

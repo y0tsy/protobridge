@@ -3,7 +3,14 @@
 #include "CoreMinimal.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
-#include "ProtobufIncludes.h"
+
+namespace google {
+	namespace protobuf {
+		class Struct;
+		class Value;
+		class ListValue;
+	}
+}
 
 class PROTOBRIDGECORE_API FProtobufStructUtils
 {
@@ -13,6 +20,9 @@ public:
 
 	static TSharedPtr<FJsonValue> ProtoValueToJsonValue(const google::protobuf::Value& InValue);
 	static bool JsonValueToProtoValue(const TSharedPtr<FJsonValue>& InJson, google::protobuf::Value& OutValue);
+
+	static bool JsonListToProto(const TArray<TSharedPtr<FJsonValue>>& InList, google::protobuf::ListValue& OutList);
+	static TArray<TSharedPtr<FJsonValue>> ProtoToJsonList(const google::protobuf::ListValue& InList);
 
 private:
 	static TSharedPtr<FJsonObject> ProtoStructToJsonObjectInternal(const google::protobuf::Struct& InStruct, int32 CurrentDepth);

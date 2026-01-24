@@ -1,5 +1,7 @@
 #include "ProtobufStructUtils.h"
 #include "ProtobufStringUtils.h"
+#include "ProtobufIncludes.h"
+#include "ProtoBridgeCoreModule.h"
 
 TSharedPtr<FJsonObject> FProtobufStructUtils::ProtoStructToJsonObject(const google::protobuf::Struct& InStruct)
 {
@@ -21,10 +23,30 @@ bool FProtobufStructUtils::JsonValueToProtoValue(const TSharedPtr<FJsonValue>& I
 	return JsonValueToProtoValueInternal(InJson, OutValue, 0);
 }
 
+bool FProtobufStructUtils::JsonListToProto(const TArray<TSharedPtr<FJsonValue>>& InList, google::protobuf::ListValue& OutList)
+{
+	for (const auto& Item : InList) {
+		if (!JsonValueToProtoValue(Item, *OutList.add_values())) return false;
+	}
+	return true;
+}
+
+TArray<TSharedPtr<FJsonValue>> FProtobufStructUtils::ProtoToJsonList(const google::protobuf::ListValue& InList)
+{
+	TArray<TSharedPtr<FJsonValue>> Result;
+	Result.Reserve(InList.values_size());
+	for (const auto& Item : InList.values()) {
+		TSharedPtr<FJsonValue> Val = ProtoValueToJsonValue(Item);
+		if (Val.IsValid()) Result.Add(Val);
+	}
+	return Result;
+}
+
 TSharedPtr<FJsonObject> FProtobufStructUtils::ProtoStructToJsonObjectInternal(const google::protobuf::Struct& InStruct, int32 CurrentDepth)
 {
 	if (CurrentDepth >= MAX_RECURSION_DEPTH)
 	{
+		UE_LOG(LogProtoBridgeCore, Error, TEXT("Recursion depth exceeded in ProtoStructToJsonObjectInternal"));
 		return nullptr;
 	}
 
@@ -48,6 +70,7 @@ bool FProtobufStructUtils::JsonObjectToProtoStructInternal(const TSharedPtr<FJso
 {
 	if (CurrentDepth >= MAX_RECURSION_DEPTH)
 	{
+		UE_LOG(LogProtoBridgeCore, Error, TEXT("Recursion depth exceeded in JsonObjectToProtoStructInternal"));
 		return false;
 	}
 

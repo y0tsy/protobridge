@@ -1,8 +1,9 @@
 ﻿#include "ProtobufStringUtils.h"
 #include "Containers/StringConv.h"
 #include "Misc/StringBuilder.h"
+#include "ProtoBridgeCoreModule.h"
 
-void FProtobufStringUtils::FStringToStdString(const FString& InStr, std::string& OutStr)
+void FProtobufStringUtils::FStringToStdString(FStringView InStr, std::string& OutStr)
 {
 	if (InStr.IsEmpty())
 	{
@@ -11,11 +12,11 @@ void FProtobufStringUtils::FStringToStdString(const FString& InStr, std::string&
 	}
 
 	const int32 SrcLen = InStr.Len();
-	FTCHARToUTF8 Converter(*InStr, SrcLen);
+	FTCHARToUTF8 Converter(InStr.GetData(), SrcLen);
 	OutStr.assign(Converter.Get(), Converter.Length());
 }
 
-std::string FProtobufStringUtils::FStringToStdString(const FString& InStr)
+std::string FProtobufStringUtils::FStringToStdString(FStringView InStr)
 {
 	std::string Result;
 	FStringToStdString(InStr, Result);
@@ -31,7 +32,7 @@ void FProtobufStringUtils::StdStringToFString(const std::string& InStr, FString&
 	}
 
 	FUTF8ToTCHAR Converter(InStr.data(), static_cast<int32>(InStr.size()));
-	OutStr.Append(Converter.Get(), Converter.Length());
+	OutStr = FString(Converter.Length(), Converter.Get());
 }
 
 FString FProtobufStringUtils::StdStringToFString(const std::string& InStr)
@@ -128,7 +129,11 @@ void FProtobufStringUtils::StdStringToFGuid(const std::string& InStr, FGuid& Out
 		OutGuid.Invalidate();
 		return;
 	}
-	FGuid::Parse(StdStringToFString(InStr), OutGuid);
+	if (!FGuid::Parse(StdStringToFString(InStr), OutGuid))
+	{
+		UE_LOG(LogProtoBridgeCore, Warning, TEXT("Failed to parse GUID from string"));
+		OutGuid.Invalidate();
+	}
 }
 
 FGuid FProtobufStringUtils::StdStringToFGuid(const std::string& InStr)

@@ -1,14 +1,13 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "ProtobufIncludes.h"
 #include <string>
 
 class PROTOBRIDGECORE_API FProtobufStringUtils
 {
 public:
-	static void FStringToStdString(const FString& InStr, std::string& OutStr);
-	static std::string FStringToStdString(const FString& InStr);
+	static void FStringToStdString(FStringView InStr, std::string& OutStr);
+	static std::string FStringToStdString(FStringView InStr);
 
 	static void StdStringToFString(const std::string& InStr, FString& OutStr);
 	static FString StdStringToFString(const std::string& InStr);
