@@ -2,33 +2,39 @@
 #include "Services/ProtoBridgeUtils.h"
 #include "Services/CommandBuilder.h"
 #include "Services/ProtoBridgeFileManager.h"
+#include "Services/BinaryLocator.h"
+#include "Services/PathTokenResolver.h"
+#include "Services/ConfigurationValidator.h"
+#include "Services/ProtoBridgeEventBus.h"
 #include "HAL/FileManager.h"
 #include "ProtoBridgeDefs.h"
 
-UE::Tasks::TTask<FCompilationPlan> FCompilationPlanner::LaunchPlan(const FProtoBridgeConfiguration& Config, const TAtomic<bool>* CancellationFlag)
+UE::Tasks::TTask<FCompilationPlan> FCompilationPlanner::LaunchPlan(const FProtoBridgeConfiguration& Config, TSharedRef<FProtoBridgeEventBus> EventBus, const TAtomic<bool>* CancellationFlag)
 {
-	return UE::Tasks::Launch(UE_SOURCE_LOCATION, [Config, CancellationFlag]()
+	return UE::Tasks::Launch(UE_SOURCE_LOCATION, [Config, EventBus, CancellationFlag]()
 	{
-		return GeneratePlanInternal(Config, CancellationFlag);
+		return GeneratePlanInternal(Config, EventBus, CancellationFlag);
 	}, UE::Tasks::ETaskPriority::BackgroundNormal);
 }
 
-FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeConfiguration& Config, const TAtomic<bool>* CancellationFlag)
+FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeConfiguration& Config, TSharedRef<FProtoBridgeEventBus> EventBus, const TAtomic<bool>* CancellationFlag)
 {
 	FCompilationPlan Plan;
 	FCommandBuilder CommandBuilder;
 	
-	UE_LOG(LogProtoBridge, Display, TEXT("Generating compilation plan. PluginDir: %s, ProjectDir: %s"), 
-		*Config.Environment.PluginDirectory, 
-		*Config.Environment.ProjectDirectory);
+	EventBus->BroadcastLog(FProtoBridgeDiagnostic(ELogVerbosity::Display, 
+		FString::Printf(TEXT("Generating compilation plan. PluginDir: %s"), *Config.Environment.PluginDirectory)));
 
-	FString Protoc = FProtoBridgePathHelpers::ResolveProtocPath(Config.Environment);
+	if (!FConfigurationValidator::ValidateSettings(Config, Plan.Diagnostics))
+	{
+		return Plan;
+	}
+
+	FString Protoc = FBinaryLocator::ResolveProtocPath(Config.Environment);
 
 	if (Protoc.IsEmpty() || !IFileManager::Get().FileExists(*Protoc))
 	{
-		FString ErrorMsg = FString::Printf(TEXT("Protoc executable not found. Searched in: %s"), *Config.Environment.PluginDirectory);
-		Plan.Errors.Add(ErrorMsg);
-		UE_LOG(LogProtoBridge, Error, TEXT("%s"), *ErrorMsg);
+		Plan.Diagnostics.Emplace(ELogVerbosity::Error, FString::Printf(TEXT("Protoc executable not found. Searched in: %s"), *Config.Environment.PluginDirectory));
 		return Plan;
 	}
 
@@ -40,19 +46,8 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 			break;
 		}
 
-		FString Source = FProtoBridgePathHelpers::ResolvePath(Mapping.SourcePath.Path, Config.Environment);
-		FString Dest = FProtoBridgePathHelpers::ResolvePath(Mapping.DestinationPath.Path, Config.Environment);
-
-		if (Source.IsEmpty() || Dest.IsEmpty())
-		{
-			continue;
-		}
-
-		if (!FProtoBridgePathHelpers::IsPathSafe(Source, Config.Environment) || !FProtoBridgePathHelpers::IsPathSafe(Dest, Config.Environment))
-		{
-			Plan.Errors.Add(FString::Printf(TEXT("Security Error: Unsafe path detected. Source: %s, Dest: %s"), *Source, *Dest));
-			continue;
-		}
+		FString Source = FPathTokenResolver::ResolvePath(Mapping.SourcePath.Path, Config.Environment);
+		FString Dest = FPathTokenResolver::ResolvePath(Mapping.DestinationPath.Path, Config.Environment);
 
 		TArray<FString> Files;
 		if (!FProtoBridgeFileScanner::FindProtoFiles(Source, Mapping.bRecursive, Mapping.ExcludePatterns, Files, *CancellationFlag))
@@ -62,7 +57,7 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 				Plan.bWasCancelled = true;
 				break;
 			}
-			Plan.Errors.Add(FString::Printf(TEXT("Failed to scan directory: %s"), *Source));
+			Plan.Diagnostics.Emplace(ELogVerbosity::Error, FString::Printf(TEXT("Failed to scan directory: %s"), *Source));
 			continue;
 		}
 
@@ -85,12 +80,12 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 				}
 				else
 				{
-					Plan.Errors.Add(FString::Printf(TEXT("Failed to write argument file for %s"), *Source));
+					Plan.Diagnostics.Emplace(ELogVerbosity::Error, FString::Printf(TEXT("Failed to write argument file for %s"), *Source));
 				}
 			}
 			else
 			{
-				Plan.Errors.Add(FString::Printf(TEXT("Failed to build arguments for %s"), *Source));
+				Plan.Diagnostics.Emplace(ELogVerbosity::Error, FString::Printf(TEXT("Failed to build arguments for %s"), *Source));
 			}
 		}
 	}

@@ -1,8 +1,9 @@
 ﻿#include "Services/GeneratedCodePostProcessor.h"
-#include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/StringBuilder.h"
 #include "ProtoBridgeDefs.h"
+#include "HAL/PlatformFileManager.h"
+#include "Misc/ScopeExit.h"
 
 UE::Tasks::TTask<void> FGeneratedCodePostProcessor::LaunchProcessTaskFiles(const FString& SourceDir, const FString& DestDir, const TArray<FString>& InputFiles)
 {
@@ -52,49 +53,75 @@ void FGeneratedCodePostProcessor::ProcessTaskFilesInternal(const FString& Source
 
 void FGeneratedCodePostProcessor::ProcessSingleFile(const FString& FilePath)
 {
-	if (!FPaths::FileExists(FilePath))
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+
+	if (!PlatformFile.FileExists(*FilePath))
 	{
-		UE_LOG(LogProtoBridge, Warning, TEXT("PostProcessor: Generated file not found: %s"), *FilePath);
 		return;
 	}
 
-	FString Content;
-	if (FFileHelper::LoadFileToString(Content, *FilePath))
+	const int64 BufferSize = 64 * 1024;
+	TUniquePtr<uint8[]> Buffer(new uint8[BufferSize]);
+
+	TUniquePtr<IFileHandle> ReadHandle(PlatformFile.OpenRead(*FilePath));
+	if (!ReadHandle)
 	{
-		if (Content.Contains(TEXT("UE_PROTOBRIDGE_MACRO_GUARD")))
-		{
-			return;
-		}
-
-		InjectMacroGuards(Content);
-		FFileHelper::SaveStringToFile(Content, *FilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
-		UE_LOG(LogProtoBridge, Verbose, TEXT("PostProcessor: Patched file %s"), *FilePath);
+		return;
 	}
-}
 
-void FGeneratedCodePostProcessor::InjectMacroGuards(FString& Content)
-{
-	TStringBuilder<32768> SB;
+	int64 FileSize = ReadHandle->Size();
+	if (FileSize == 0) return;
 
-	SB << TEXT("// UE_PROTOBRIDGE_MACRO_GUARD_START\n");
-	SB << TEXT("#ifdef check\n");
-	SB << TEXT("  #pragma push_macro(\"check\")\n");
-	SB << TEXT("  #undef check\n");
-	SB << TEXT("#endif\n");
-	SB << TEXT("#ifdef verify\n");
-	SB << TEXT("  #pragma push_macro(\"verify\")\n");
-	SB << TEXT("  #undef verify\n");
-	SB << TEXT("#endif\n\n");
+	int64 BytesRead = ReadHandle->Read(Buffer.Get(), FMath::Min(FileSize, BufferSize));
+	FString HeaderChunk;
+	FFileHelper::BufferToString(HeaderChunk, Buffer.Get(), BytesRead);
 
-	SB << Content;
+	if (HeaderChunk.Contains(TEXT("UE_PROTOBRIDGE_MACRO_GUARD")))
+	{
+		return;
+	}
 
-	SB << TEXT("\n// UE_PROTOBRIDGE_MACRO_GUARD_END\n");
-	SB << TEXT("#ifdef check\n");
-	SB << TEXT("  #pragma pop_macro(\"check\")\n");
-	SB << TEXT("#endif\n");
-	SB << TEXT("#ifdef verify\n");
-	SB << TEXT("  #pragma pop_macro(\"verify\")\n");
-	SB << TEXT("#endif\n");
+	ReadHandle->Seek(0);
 
-	Content = SB.ToString();
+	FString TempFilePath = FilePath + TEXT(".tmp");
+	TUniquePtr<IFileHandle> WriteHandle(PlatformFile.OpenWrite(*TempFilePath));
+	if (!WriteHandle)
+	{
+		return;
+	}
+
+	auto WriteString = [&WriteHandle](const FString& Str)
+	{
+		FTCHARToUTF8 Converter(*Str);
+		WriteHandle->Write((const uint8*)Converter.Get(), Converter.Length());
+	};
+
+	WriteString(TEXT("// UE_PROTOBRIDGE_MACRO_GUARD_START\n"));
+	WriteString(TEXT("#ifdef check\n  #pragma push_macro(\"check\")\n  #undef check\n#endif\n"));
+	WriteString(TEXT("#ifdef verify\n  #pragma push_macro(\"verify\")\n  #undef verify\n#endif\n\n"));
+
+	int64 BytesRemaining = FileSize;
+	while (BytesRemaining > 0)
+	{
+		int64 BytesToRead = FMath::Min(BytesRemaining, BufferSize);
+		if (ReadHandle->Read(Buffer.Get(), BytesToRead))
+		{
+			WriteHandle->Write(Buffer.Get(), BytesToRead);
+			BytesRemaining -= BytesToRead;
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	WriteString(TEXT("\n// UE_PROTOBRIDGE_MACRO_GUARD_END\n"));
+	WriteString(TEXT("#ifdef check\n  #pragma pop_macro(\"check\")\n#endif\n"));
+	WriteString(TEXT("#ifdef verify\n  #pragma pop_macro(\"verify\")\n#endif\n"));
+
+	ReadHandle.Reset();
+	WriteHandle.Reset();
+
+	PlatformFile.DeleteFile(*FilePath);
+	PlatformFile.MoveFile(*FilePath, *TempFilePath);
 }

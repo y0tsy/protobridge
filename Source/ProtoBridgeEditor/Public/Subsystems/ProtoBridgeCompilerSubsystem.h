@@ -7,6 +7,7 @@
 #include "ProtoBridgeCompilerSubsystem.generated.h"
 
 class FCompilationSession;
+class FProtoBridgeEventBus;
 
 UCLASS()
 class PROTOBRIDGEEDITOR_API UProtoBridgeCompilerSubsystem : public UEditorSubsystem, public IProtoBridgeService
@@ -22,12 +23,15 @@ public:
 	virtual void WaitForCompletion() override;
 	virtual bool IsCompiling() const override;
 
+	TSharedPtr<FProtoBridgeEventBus> GetEventBus() const;
+
 private:
 	void OnCompilationFinished(bool bSuccess, const FString& Msg);
 	bool OnTimeoutTick(float Delta);
 
 	mutable FCriticalSection ServiceMutex;
 	TSharedPtr<FCompilationSession> CurrentSession;
+	TSharedPtr<FProtoBridgeEventBus> EventBus;
 	FDelegateHandle FinishedHandle;
 
 	FTSTicker::FDelegateHandle TickerHandle;

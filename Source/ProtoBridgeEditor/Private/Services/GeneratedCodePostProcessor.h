@@ -11,5 +11,4 @@ public:
 private:
 	static void ProcessTaskFilesInternal(const FString& SourceDir, const FString& DestDir, const TArray<FString>& InputFiles);
 	static void ProcessSingleFile(const FString& FilePath);
-	static void InjectMacroGuards(FString& Content);
 };

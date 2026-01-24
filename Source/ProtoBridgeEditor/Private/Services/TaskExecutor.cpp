@@ -6,8 +6,9 @@
 #include "ProtoBridgeDefs.h"
 #include "HAL/PlatformProcess.h"
 
-FTaskExecutor::FTaskExecutor(int32 InMaxConcurrentProcesses)
+FTaskExecutor::FTaskExecutor(int32 InMaxConcurrentProcesses, TSharedRef<FProtoBridgeEventBus> InEventBus)
 	: Pipe(TEXT("ProtoBridgeTaskPipe"))
+	, EventBus(InEventBus)
 	, MaxConcurrentProcesses(FMath::Clamp(InMaxConcurrentProcesses, 1, 16))
 	, bIsRunning(false)
 	, bIsCancelled(false)
@@ -120,7 +121,7 @@ void FTaskExecutor::TryLaunchProcess()
 			}
 			else
 			{
-				UE_LOG(LogProtoBridge, Error, TEXT("Failed to launch compilation process"));
+				EventBus->BroadcastLog(FProtoBridgeDiagnostic(ELogVerbosity::Error, TEXT("Failed to launch compilation process")));
 				bHasErrors = true;
 			}
 		}
@@ -136,7 +137,7 @@ void FTaskExecutor::HandleOutput(FString Output, TWeakPtr<FMonitoredProcess> Pro
 {
 	if (!Output.IsEmpty())
 	{
-		FProtoBridgeEventBus::Get().BroadcastLog(Output, ELogVerbosity::Display);
+		EventBus->BroadcastLog(FProtoBridgeDiagnostic(ELogVerbosity::Display, Output));
 	}
 }
 
@@ -188,8 +189,11 @@ void FTaskExecutor::HandleCompleted(int32 ReturnCode, TWeakPtr<FMonitoredProcess
 			}
 			else if (!bLocalCancelled)
 			{
-				FString ErrorMsg = FString::Printf(TEXT("Process failed with code %d. Args: %s"), ReturnCode, *CompletedTask.TempArgFilePath);
-				FProtoBridgeEventBus::Get().BroadcastLog(ErrorMsg, ELogVerbosity::Error);
+				if (TSharedPtr<FTaskExecutor> SelfInner = WeakSelf.Pin())
+				{
+					FString ErrorMsg = FString::Printf(TEXT("Process failed with code %d. Args: %s"), ReturnCode, *CompletedTask.TempArgFilePath);
+					SelfInner->EventBus->BroadcastLog(FProtoBridgeDiagnostic(ELogVerbosity::Error, ErrorMsg));
+				}
 			}
 
 			if (TSharedPtr<FTaskExecutor> SelfInner = WeakSelf.Pin())
@@ -210,7 +214,7 @@ void FTaskExecutor::Finalize(bool bSuccess, const FString& Message)
 		if (TSharedPtr<FTaskExecutor> Self = WeakSelf.Pin())
 		{
 			Self->OnFinished.ExecuteIfBound();
-			FProtoBridgeEventBus::Get().BroadcastCompilationFinished(bSuccess, Message);
+			Self->EventBus->BroadcastCompilationFinished(bSuccess, Message);
 		}
 	});
 }

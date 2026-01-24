@@ -8,13 +8,23 @@
 #include "Tasks/Task.h"
 
 class FTaskExecutor;
+class FProtoBridgeEventBus;
+
+enum class ESessionState : uint8
+{
+	Idle,
+	Planning,
+	Compiling,
+	Canceling,
+	Finished
+};
 
 class FCompilationSession : public TSharedFromThis<FCompilationSession>
 {
 public:
 	using FExecutorFactory = TFunction<TSharedPtr<FTaskExecutor>(int32 MaxProcesses)>;
 
-	FCompilationSession();
+	FCompilationSession(TSharedRef<FProtoBridgeEventBus> InEventBus);
 	~FCompilationSession();
 
 	void SetExecutorFactory(FExecutorFactory InFactory);
@@ -25,16 +35,17 @@ public:
 
 private:
 	void OnPlanningCompleted(FCompilationPlan Plan, int32 MaxConcurrentProcesses);
-	void FinishSession();
+	void FinishSession(bool bSuccess, const FString& Message);
+	bool TryTransitionState(ESessionState Expected, ESessionState NewState);
 	
 	TSharedPtr<FTaskExecutor> Executor;
-	mutable FCriticalSection SessionMutex;
-	bool bIsActive;
+	
+	mutable FCriticalSection StateMutex;
+	TAtomic<ESessionState> CurrentState;
 	
 	FExecutorFactory ExecutorFactory;
+	TSharedRef<FProtoBridgeEventBus> EventBus;
 
-	TAtomic<bool> bIsTearingDown;
 	TAtomic<bool> CancellationFlag;
-	
 	FEvent* CompletionEvent;
 };

@@ -1,6 +1,8 @@
 ﻿#include "UI/ProtoBridgeUIManager.h"
 #include "UI/ProtoBridgeLogPresenter.h"
 #include "Services/ProtoBridgeEventBus.h"
+#include "Subsystems/ProtoBridgeCompilerSubsystem.h"
+#include "Editor.h"
 #include "Async/Async.h"
 
 FProtoBridgeUIManager::FProtoBridgeUIManager()
@@ -18,24 +20,37 @@ void FProtoBridgeUIManager::Initialize()
 	LogPresenter->Initialize();
 	Presenters.Add(LogPresenter);
 
-	StartedHandle = FProtoBridgeEventBus::Get().RegisterOnCompilationStarted(
-		FOnProtoBridgeCompilationStarted::FDelegate::CreateSP(this, &FProtoBridgeUIManager::HandleCompilationStarted)
-	);
-	
-	FinishedHandle = FProtoBridgeEventBus::Get().RegisterOnCompilationFinished(
-		FOnProtoBridgeCompilationFinished::FDelegate::CreateSP(this, &FProtoBridgeUIManager::HandleCompilationFinished)
-	);
-	
-	LogHandle = FProtoBridgeEventBus::Get().RegisterOnLog(
-		FOnProtoBridgeLogMessage::FDelegate::CreateSP(this, &FProtoBridgeUIManager::HandleLogMessage)
-	);
+	if (GEditor)
+	{
+		if (UProtoBridgeCompilerSubsystem* Subsystem = GEditor->GetEditorSubsystem<UProtoBridgeCompilerSubsystem>())
+		{
+			if (TSharedPtr<FProtoBridgeEventBus> Bus = Subsystem->GetEventBus())
+			{
+				WeakEventBus = Bus;
+				StartedHandle = Bus->RegisterOnCompilationStarted(
+					FOnProtoBridgeCompilationStarted::FDelegate::CreateSP(this, &FProtoBridgeUIManager::HandleCompilationStarted)
+				);
+				
+				FinishedHandle = Bus->RegisterOnCompilationFinished(
+					FOnProtoBridgeCompilationFinished::FDelegate::CreateSP(this, &FProtoBridgeUIManager::HandleCompilationFinished)
+				);
+				
+				LogHandle = Bus->RegisterOnLog(
+					FOnProtoBridgeLogMessage::FDelegate::CreateSP(this, &FProtoBridgeUIManager::HandleLogMessage)
+				);
+			}
+		}
+	}
 }
 
 void FProtoBridgeUIManager::Shutdown()
 {
-	FProtoBridgeEventBus::Get().UnregisterOnCompilationStarted(StartedHandle);
-	FProtoBridgeEventBus::Get().UnregisterOnCompilationFinished(FinishedHandle);
-	FProtoBridgeEventBus::Get().UnregisterOnLog(LogHandle);
+	if (TSharedPtr<FProtoBridgeEventBus> Bus = WeakEventBus.Pin())
+	{
+		Bus->UnregisterOnCompilationStarted(StartedHandle);
+		Bus->UnregisterOnCompilationFinished(FinishedHandle);
+		Bus->UnregisterOnLog(LogHandle);
+	}
 
 	for (TSharedPtr<IProtoBridgeOutputPresenter>& Presenter : Presenters)
 	{
@@ -74,16 +89,16 @@ void FProtoBridgeUIManager::HandleCompilationFinished(bool bSuccess, const FStri
 	});
 }
 
-void FProtoBridgeUIManager::HandleLogMessage(const FString& Message, ELogVerbosity::Type Verbosity)
+void FProtoBridgeUIManager::HandleLogMessage(const FProtoBridgeDiagnostic& Diagnostic)
 {
 	TWeakPtr<FProtoBridgeUIManager> WeakSelf = AsShared();
-	AsyncTask(ENamedThreads::GameThread, [WeakSelf, Message, Verbosity]()
+	AsyncTask(ENamedThreads::GameThread, [WeakSelf, Diagnostic]()
 	{
 		if (TSharedPtr<FProtoBridgeUIManager> Self = WeakSelf.Pin())
 		{
 			for (const TSharedPtr<IProtoBridgeOutputPresenter>& Presenter : Self->Presenters)
 			{
-				Presenter->OnLogMessage(Message, Verbosity);
+				Presenter->OnLogMessage(Diagnostic);
 			}
 		}
 	});

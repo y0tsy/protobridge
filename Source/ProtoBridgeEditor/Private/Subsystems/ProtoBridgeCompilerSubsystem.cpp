@@ -8,15 +8,19 @@
 void UProtoBridgeCompilerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	EventBus = MakeShared<FProtoBridgeEventBus>();
 	
-	FinishedHandle = FProtoBridgeEventBus::Get().RegisterOnCompilationFinished(
+	FinishedHandle = EventBus->RegisterOnCompilationFinished(
 		FOnProtoBridgeCompilationFinished::FDelegate::CreateUObject(this, &UProtoBridgeCompilerSubsystem::OnCompilationFinished)
 	);
 }
 
 void UProtoBridgeCompilerSubsystem::Deinitialize()
 {
-	FProtoBridgeEventBus::Get().UnregisterOnCompilationFinished(FinishedHandle);
+	if (EventBus.IsValid())
+	{
+		EventBus->UnregisterOnCompilationFinished(FinishedHandle);
+	}
 	Cancel();
 	WaitForCompletion();
 
@@ -31,7 +35,7 @@ void UProtoBridgeCompilerSubsystem::Compile(const FProtoBridgeConfiguration& Con
 
 	if (CurrentSession.IsValid() && CurrentSession->IsRunning())
 	{
-		UE_LOG(LogProtoBridge, Warning, TEXT("Compilation already in progress"));
+		EventBus->BroadcastLog(FProtoBridgeDiagnostic(ELogVerbosity::Warning, TEXT("Compilation already in progress")));
 		return;
 	}
 
@@ -52,7 +56,7 @@ void UProtoBridgeCompilerSubsystem::Compile(const FProtoBridgeConfiguration& Con
 		);
 	}
 
-	CurrentSession = MakeShared<FCompilationSession>();
+	CurrentSession = MakeShared<FCompilationSession>(EventBus.ToSharedRef());
 	CurrentSession->Start(Config);
 }
 
@@ -116,6 +120,11 @@ bool UProtoBridgeCompilerSubsystem::IsCompiling() const
 	return CurrentSession.IsValid() && CurrentSession->IsRunning();
 }
 
+TSharedPtr<FProtoBridgeEventBus> UProtoBridgeCompilerSubsystem::GetEventBus() const
+{
+	return EventBus;
+}
+
 void UProtoBridgeCompilerSubsystem::OnCompilationFinished(bool bSuccess, const FString& Message)
 {
 	TWeakObjectPtr<UProtoBridgeCompilerSubsystem> WeakSelf(this);
@@ -153,7 +162,7 @@ bool UProtoBridgeCompilerSubsystem::OnTimeoutTick(float Delta)
 
 	if (bShouldCancel)
 	{
-		UE_LOG(LogProtoBridge, Error, TEXT("Compilation timed out (> %.1fs). Cancelling..."), SessionTimeout);
+		EventBus->BroadcastLog(FProtoBridgeDiagnostic(ELogVerbosity::Error, FString::Printf(TEXT("Compilation timed out (> %.1fs). Cancelling..."), SessionTimeout)));
 		Cancel();
 		return false;
 	}

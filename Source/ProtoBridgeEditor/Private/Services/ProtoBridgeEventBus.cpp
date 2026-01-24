@@ -1,12 +1,6 @@
 ﻿#include "Services/ProtoBridgeEventBus.h"
 #include "Misc/ScopeLock.h"
 
-FProtoBridgeEventBus& FProtoBridgeEventBus::Get()
-{
-	static FProtoBridgeEventBus Instance;
-	return Instance;
-}
-
 FDelegateHandle FProtoBridgeEventBus::RegisterOnLog(const FOnProtoBridgeLogMessage::FDelegate& Delegate)
 {
 	FScopeLock Lock(&BusMutex);
@@ -19,12 +13,12 @@ void FProtoBridgeEventBus::UnregisterOnLog(FDelegateHandle Handle)
 	LogDelegate.Remove(Handle);
 }
 
-void FProtoBridgeEventBus::BroadcastLog(const FString& Message, ELogVerbosity::Type Verbosity)
+void FProtoBridgeEventBus::BroadcastLog(const FProtoBridgeDiagnostic& Diagnostic)
 {
 	FScopeLock Lock(&BusMutex);
 	if (LogDelegate.IsBound())
 	{
-		LogDelegate.Broadcast(Message, Verbosity);
+		LogDelegate.Broadcast(Diagnostic);
 	}
 }
 

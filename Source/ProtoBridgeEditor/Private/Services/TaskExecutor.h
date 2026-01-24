@@ -6,12 +6,14 @@
 #include "Containers/Queue.h"
 #include "Tasks/Pipe.h"
 
+class FProtoBridgeEventBus;
+
 class FTaskExecutor : public TSharedFromThis<FTaskExecutor>
 {
 public:
 	DECLARE_DELEGATE(FOnExecutorFinishedDelegate);
 
-	FTaskExecutor(int32 InMaxConcurrentProcesses);
+	FTaskExecutor(int32 InMaxConcurrentProcesses, TSharedRef<FProtoBridgeEventBus> InEventBus);
 	~FTaskExecutor();
 
 	void Execute(TArray<FCompilationTask>&& InTasks);
@@ -28,6 +30,7 @@ private:
 	void Finalize(bool bSuccess, const FString& Message);
 
 	UE::Tasks::FPipe Pipe;
+	TSharedRef<FProtoBridgeEventBus> EventBus;
 	
 	TQueue<FCompilationTask> TaskQueue;
 	TArray<TSharedPtr<FMonitoredProcess>> ActiveProcesses;

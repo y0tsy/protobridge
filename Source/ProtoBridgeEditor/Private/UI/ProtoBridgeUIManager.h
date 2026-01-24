@@ -1,9 +1,10 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Logging/LogVerbosity.h"
+#include "ProtoBridgeCompilation.h"
 
 class IProtoBridgeOutputPresenter;
+class FProtoBridgeEventBus;
 
 class FProtoBridgeUIManager : public TSharedFromThis<FProtoBridgeUIManager>
 {
@@ -17,9 +18,10 @@ public:
 private:
 	void HandleCompilationStarted();
 	void HandleCompilationFinished(bool bSuccess, const FString& Message);
-	void HandleLogMessage(const FString& Message, ELogVerbosity::Type Verbosity);
+	void HandleLogMessage(const FProtoBridgeDiagnostic& Diagnostic);
 
 	TArray<TSharedPtr<IProtoBridgeOutputPresenter>> Presenters;
+	TWeakPtr<FProtoBridgeEventBus> WeakEventBus;
 
 	FDelegateHandle StartedHandle;
 	FDelegateHandle FinishedHandle;

@@ -63,22 +63,20 @@ void FMessageLogPresenter::OnCompilationFinished(bool bSuccess, const FString& M
 	FSlateNotificationManager::Get().AddNotification(Info);
 }
 
-void FMessageLogPresenter::OnLogMessage(const FString& Message, ELogVerbosity::Type Verbosity)
+void FMessageLogPresenter::OnLogMessage(const FProtoBridgeDiagnostic& Diagnostic)
 {
 	FMessageLog Logger(LogCategoryName);
-	
-	if (Verbosity == ELogVerbosity::Error)
+	TSharedRef<FTokenizedMessage> TokenizedMessage = FTokenizedMessage::Create(
+		static_cast<EMessageSeverity::Type>(Diagnostic.Verbosity)
+	);
+
+	if (!Diagnostic.FilePath.IsEmpty())
 	{
-		Logger.Error(FText::FromString(Message));
+		TokenizedMessage->AddToken(FTextToken::Create(FText::FromString(FString::Printf(TEXT("%s: "), *Diagnostic.FilePath))));
 	}
-	else if (Verbosity == ELogVerbosity::Warning)
-	{
-		Logger.Warning(FText::FromString(Message));
-	}
-	else
-	{
-		Logger.Info(FText::FromString(Message));
-	}
+
+	TokenizedMessage->AddToken(FTextToken::Create(FText::FromString(Diagnostic.Message)));
+	Logger.AddMessage(TokenizedMessage);
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -7,21 +7,19 @@
 #include "HAL/PlatformProcess.h"
 #include "ProtoBridgeDefs.h"
 
-FCompilationSession::FCompilationSession()
-	: bIsActive(false)
-	, bIsTearingDown(false)
+FCompilationSession::FCompilationSession(TSharedRef<FProtoBridgeEventBus> InEventBus)
+	: CurrentState(ESessionState::Idle)
+	, EventBus(InEventBus)
 	, CancellationFlag(false)
 {
-	ExecutorFactory = [](int32 MaxProcesses) {
-		return MakeShared<FTaskExecutor>(MaxProcesses);
+	ExecutorFactory = [InEventBus](int32 MaxProcesses) {
+		return MakeShared<FTaskExecutor>(MaxProcesses, InEventBus);
 	};
 	CompletionEvent = FPlatformProcess::GetSynchEventFromPool(true);
 }
 
 FCompilationSession::~FCompilationSession()
 {
-	UE_LOG(LogProtoBridge, Verbose, TEXT("FCompilationSession: Destructor"));
-	bIsTearingDown = true;
 	Cancel();
 	WaitForCompletion();
 	
@@ -42,9 +40,11 @@ void FCompilationSession::SetExecutorFactory(FExecutorFactory InFactory)
 
 void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 {
-	FScopeLock Lock(&SessionMutex);
-	if (bIsActive) return;
-	bIsActive = true;
+	if (!TryTransitionState(ESessionState::Idle, ESessionState::Planning))
+	{
+		return;
+	}
+
 	CancellationFlag = false;
 	
 	if (CompletionEvent)
@@ -52,13 +52,12 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 		CompletionEvent->Reset();
 	}
 	
-	FProtoBridgeEventBus::Get().BroadcastCompilationStarted();
-	
-	FProtoBridgeEventBus::Get().BroadcastLog(TEXT("Starting discovery..."), ELogVerbosity::Display);
+	EventBus->BroadcastCompilationStarted();
+	EventBus->BroadcastLog(FProtoBridgeDiagnostic(ELogVerbosity::Display, TEXT("Starting discovery...")));
 
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
 	
-	UE::Tasks::TTask<FCompilationPlan> PlanTask = FCompilationPlanner::LaunchPlan(Config, &CancellationFlag);
+	UE::Tasks::TTask<FCompilationPlan> PlanTask = FCompilationPlanner::LaunchPlan(Config, EventBus, &CancellationFlag);
 
 	UE::Tasks::Launch(UE_SOURCE_LOCATION, [WeakSelf, PlanTask, Config]() mutable
 	{
@@ -71,18 +70,18 @@ void FCompilationSession::Start(const FProtoBridgeConfiguration& Config)
 
 void FCompilationSession::Cancel()
 {
-	UE_LOG(LogProtoBridge, Display, TEXT("FCompilationSession: Cancel requested"));
+	FScopeLock Lock(&StateMutex);
+	if (CurrentState == ESessionState::Idle || CurrentState == ESessionState::Finished || CurrentState == ESessionState::Canceling)
+	{
+		return;
+	}
+	
+	CurrentState = ESessionState::Canceling;
 	CancellationFlag = true;
 
-	TSharedPtr<FTaskExecutor> ExecutorToCancel;
+	if (Executor.IsValid())
 	{
-		FScopeLock Lock(&SessionMutex);
-		ExecutorToCancel = Executor;
-	}
-
-	if (ExecutorToCancel.IsValid())
-	{
-		ExecutorToCancel->Cancel();
+		Executor->Cancel();
 	}
 }
 
@@ -92,87 +91,90 @@ void FCompilationSession::WaitForCompletion()
 	{
 		if (IsRunning())
 		{
-			UE_LOG(LogProtoBridge, Display, TEXT("FCompilationSession: Waiting for completion event..."));
 			CompletionEvent->Wait();
-			UE_LOG(LogProtoBridge, Display, TEXT("FCompilationSession: Completion event received."));
 		}
 	}
 }
 
 bool FCompilationSession::IsRunning() const
 {
-	FScopeLock Lock(&SessionMutex);
-	return bIsActive;
+	ESessionState State = CurrentState;
+	return State != ESessionState::Idle && State != ESessionState::Finished;
 }
 
 void FCompilationSession::OnPlanningCompleted(FCompilationPlan Plan, int32 MaxConcurrentProcesses)
 {
-	if (Plan.bWasCancelled || CancellationFlag || bIsTearingDown)
+	if (!TryTransitionState(ESessionState::Planning, ESessionState::Compiling))
 	{
-		FinishSession();
-		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Operation canceled"));
+		FinishSession(false, TEXT("Operation canceled during planning"));
 		return;
 	}
 
-	for (const FString& Err : Plan.Errors)
+	if (Plan.bWasCancelled || CancellationFlag)
 	{
-		FProtoBridgeEventBus::Get().BroadcastLog(Err, ELogVerbosity::Error);
+		FinishSession(false, TEXT("Operation canceled"));
+		return;
+	}
+
+	for (const FProtoBridgeDiagnostic& Diag : Plan.Diagnostics)
+	{
+		EventBus->BroadcastLog(Diag);
 	}
 
 	if (Plan.Tasks.Num() == 0)
 	{
-		bool bHasErrors = Plan.Errors.Num() > 0;
-		FinishSession();
-		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(!bHasErrors, bHasErrors ? TEXT("Configuration errors detected") : TEXT("No files to compile"));
+		bool bHasErrors = Plan.Diagnostics.ContainsByPredicate([](const FProtoBridgeDiagnostic& D){ return D.Verbosity == ELogVerbosity::Error; });
+		FinishSession(!bHasErrors, bHasErrors ? TEXT("Configuration errors detected") : TEXT("No files to compile"));
 		return;
 	}
 
-	FProtoBridgeEventBus::Get().BroadcastLog(FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num()), ELogVerbosity::Display);
+	EventBus->BroadcastLog(FProtoBridgeDiagnostic(ELogVerbosity::Display, FString::Printf(TEXT("Generated %d tasks"), Plan.Tasks.Num())));
 
 	TSharedPtr<FTaskExecutor> NewExecutor = ExecutorFactory(MaxConcurrentProcesses);
+	Executor = NewExecutor;
 
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
 	NewExecutor->OnFinished.BindLambda([WeakSelf]()
 	{
 		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
 		{
-			UE_LOG(LogProtoBridge, Verbose, TEXT("FCompilationSession: Executor finished delegate called"));
-			Self->FinishSession();
+			Self->FinishSession(true, TEXT("")); 
 		}
 	});
 
-	bool bShouldStart = false;
-	{
-		FScopeLock Lock(&SessionMutex);
-		if (bIsActive && !CancellationFlag && !bIsTearingDown)
-		{
-			Executor = NewExecutor;
-			bShouldStart = true;
-		}
-	}
-
-	if (bShouldStart)
-	{
-		NewExecutor->Execute(MoveTemp(Plan.Tasks));
-	}
-	else
-	{
-		FinishSession();
-		FProtoBridgeEventBus::Get().BroadcastCompilationFinished(false, TEXT("Canceled before execution"));
-	}
+	NewExecutor->Execute(MoveTemp(Plan.Tasks));
 }
 
-void FCompilationSession::FinishSession()
+void FCompilationSession::FinishSession(bool bSuccess, const FString& Message)
 {
-	UE_LOG(LogProtoBridge, Verbose, TEXT("FCompilationSession: Finishing session"));
 	{
-		FScopeLock Lock(&SessionMutex);
-		bIsActive = false;
+		FScopeLock Lock(&StateMutex);
+		CurrentState = ESessionState::Finished;
 		Executor.Reset();
 	}
-	
+
 	if (CompletionEvent)
 	{
 		CompletionEvent->Trigger();
 	}
+	
+	if (!Message.IsEmpty())
+	{
+		EventBus->BroadcastCompilationFinished(bSuccess, Message);
+	}
+}
+
+bool FCompilationSession::TryTransitionState(ESessionState Expected, ESessionState NewState)
+{
+	FScopeLock Lock(&StateMutex);
+	if (CurrentState == Expected)
+	{
+		CurrentState = NewState;
+		return true;
+	}
+	if (CurrentState == ESessionState::Canceling)
+	{
+		return false;
+	}
+	return false;
 }

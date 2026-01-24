@@ -1,16 +1,16 @@
 ﻿#include "Services/CommandBuilder.h"
-#include "Services/ProtoBridgeUtils.h"
+#include "Services/PathTokenResolver.h"
 #include "ProtoBridgeDefs.h"
 #include "Misc/StringBuilder.h"
 #include "Misc/Paths.h"
+#include "BinaryLocator.h"
 
 bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, const FString& SourceDir, const FString& DestDir, const TArray<FString>& Files, FString& OutContent)
 {
-	FString PluginPath = FProtoBridgePathHelpers::ResolvePluginPath(Config.Environment);
-	
+	FString PluginPath = FPathTokenResolver::ResolvePath(Config.Environment.PluginPath, Config.Environment);
+	PluginPath = FBinaryLocator::ResolvePluginPath(Config.Environment);
 	if (SourceDir.IsEmpty() || DestDir.IsEmpty() || PluginPath.IsEmpty())
 	{
-		UE_LOG(LogProtoBridge, Error, TEXT("CommandBuilder: Missing required paths. Source: '%s', Dest: '%s', Plugin: '%s'"), *SourceDir, *DestDir, *PluginPath);
 		return false;
 	}
 
@@ -34,13 +34,7 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 
 	if (!Config.ApiMacro.IsEmpty())
 	{
-		if (!IsMacroNameSafe(Config.ApiMacro))
-		{
-			UE_LOG(LogProtoBridge, Error, TEXT("CommandBuilder: Unsafe API macro name: %s"), *Config.ApiMacro);
-			return false;
-		}
 		SB << TEXT("--ue_opt=dllexport_macro=") << Config.ApiMacro << TEXT("\n");
-		//SB << TEXT("--cpp_opt=dllexport_decl=") << Config.ApiMacro << TEXT("\n");
 	}
 
 	for (const FString& File : Files)
@@ -50,25 +44,5 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 	}
 
 	OutContent = SB.ToString();
-	UE_LOG(LogProtoBridge, Verbose, TEXT("Generated Arguments Content:\n%s"), *OutContent);
-	
-	return true;
-}
-
-bool FCommandBuilder::IsMacroNameSafe(const FString& Str)
-{
-	if (Str.IsEmpty() || FChar::IsDigit(Str[0]))
-	{
-		return false;
-	}
-
-	for (int32 i = 0; i < Str.Len(); ++i)
-	{
-		TCHAR C = Str[i];
-		if (!FChar::IsAlnum(C) && C != TCHAR('_'))
-		{
-			return false;
-		}
-	}
 	return true;
 }

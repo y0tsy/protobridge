@@ -2,15 +2,16 @@
 
 #include "CoreMinimal.h"
 #include "ProtoBridgeDelegates.h"
+#include "ProtoBridgeCompilation.h"
 
-class FProtoBridgeEventBus
+class FProtoBridgeEventBus : public TSharedFromThis<FProtoBridgeEventBus>
 {
 public:
-	static FProtoBridgeEventBus& Get();
+	FProtoBridgeEventBus() = default;
 
 	FDelegateHandle RegisterOnLog(const FOnProtoBridgeLogMessage::FDelegate& Delegate);
 	void UnregisterOnLog(FDelegateHandle Handle);
-	void BroadcastLog(const FString& Message, ELogVerbosity::Type Verbosity);
+	void BroadcastLog(const FProtoBridgeDiagnostic& Diagnostic);
 
 	FDelegateHandle RegisterOnCompilationStarted(const FOnProtoBridgeCompilationStarted::FDelegate& Delegate);
 	void UnregisterOnCompilationStarted(FDelegateHandle Handle);
@@ -21,8 +22,6 @@ public:
 	void BroadcastCompilationFinished(bool bSuccess, const FString& Message);
 
 private:
-	FProtoBridgeEventBus() = default;
-	
 	FCriticalSection BusMutex;
 	FOnProtoBridgeLogMessage LogDelegate;
 	FOnProtoBridgeCompilationStarted StartedDelegate;
