@@ -42,7 +42,7 @@ private:
 			"del", DelegateName, "out", OutputType);
 
 		Ctx.Writer.Print("UCLASS()\n");
-		FScopedClass ClassBlock(Ctx.Writer, "class " + Ctx.ApiMacro + NodeClassName + " : public UGrpcAsyncNodeBase");
+		FScopedClass ClassBlock(Ctx.Writer, "class " + Ctx.ApiMacro + NodeClassName + " : public UGrpcBlueprintNode");
 
 		Ctx.Writer.Print("GENERATED_BODY()\n\n");
 		Ctx.Writer.Print("public:\n");
@@ -102,12 +102,12 @@ private:
 			Ctx.Writer.Outdent();
 			Ctx.Writer.Print("}\n\n");
 
-			Ctx.Writer.Print("TSharedPtr<FGrpcClientThread> Thread = Subsystem->GetClientThread(TEXT(\"$svc$\"));\n", "svc", ServiceName);
-			Ctx.Writer.Print("if (!Thread.IsValid())\n");
+			Ctx.Writer.Print("FGrpcClientThread* Thread = Subsystem->GetClient(TEXT(\"$svc$\"), TEXT(\"localhost:50051\"));\n", "svc", ServiceName);
+			Ctx.Writer.Print("if (!Thread)\n");
 			FScopedBlock ThreadErrBlock(Ctx.Writer);
 			Ctx.Writer.Print("FGrpcResult ErrorResult;\n");
 			Ctx.Writer.Print("ErrorResult.StatusCode = EGrpcCode::Unavailable;\n");
-			Ctx.Writer.Print("ErrorResult.StatusMessage = TEXT(\"Service thread not configured\");\n");
+			Ctx.Writer.Print("ErrorResult.StatusMessage = TEXT(\"Client thread not found or failed to init\");\n");
 			Ctx.Writer.Print("OnFailure.Broadcast(ErrorResult, $out$());\n", "out", OutputType);
 			Ctx.Writer.Print("SetReadyToDestroy();\n");
 			Ctx.Writer.Print("return;\n");
@@ -116,13 +116,23 @@ private:
 
 			Ctx.Writer.Print("$proto_in$ ProtoRequest;\n", "proto_in", ProtoInputType);
 			Ctx.Writer.Print("Request.ToProto(ProtoRequest);\n\n");
+			
+			Ctx.Writer.Print("auto Stub = $svc$::NewStub(Thread->GetChannel());\n", "svc", ProtoServiceType);
 
-			Ctx.Writer.Print("auto* GrpcRequest = new TGrpcRequest<$proto_out$>(\n", "proto_out", ProtoOutputType);
+			Ctx.Writer.Print("auto* GrpcRequest = new TGrpcUnaryRequest<$proto_out$>(\n", "proto_out", ProtoOutputType);
 			Ctx.Writer.Indent();
-			Ctx.Writer.Print("[WeakThis = TWeakObjectPtr<UGrpcAsyncNodeBase>(this)](const FGrpcResult& Result, const $proto_out$& ProtoResponse)\n", "proto_out", ProtoOutputType);
+			Ctx.Writer.Print("Metadata, Timeout,\n");
+			
+			Ctx.Writer.Print("[Stub, ProtoRequest, this](grpc::CompletionQueue* CQ, void* Tag) mutable {\n");
+			Ctx.Writer.Indent();
+			Ctx.Writer.Print("return Stub->Async$method$(&GetContext(), ProtoRequest, CQ, Tag);\n", "method", MethodName);
+			Ctx.Writer.Outdent();
+			Ctx.Writer.Print("},\n");
+
+			Ctx.Writer.Print("[WeakThis = TWeakObjectPtr<UGrpcBlueprintNode>(this)](const FGrpcResult& Result, const $proto_out$& ProtoResponse)\n", "proto_out", ProtoOutputType);
 			FScopedBlock LambdaBlock(Ctx.Writer);
 			
-			Ctx.Writer.Print("if (UGrpcAsyncNodeBase* StrongThis = WeakThis.Get())\n");
+			Ctx.Writer.Print("if (UGrpcBlueprintNode* StrongThis = WeakThis.Get())\n");
 			FScopedBlock AliveBlock(Ctx.Writer);
 			Ctx.Writer.Print("$node$* CastedThis = Cast<$node$>(StrongThis);\n", "node", NodeClassName);
 			Ctx.Writer.Print("$out$ UEResponse;\n", "out", OutputType);
@@ -142,11 +152,9 @@ private:
 			Ctx.Writer.Print("}\n");
 			
 			Ctx.Writer.Outdent();
-			Ctx.Writer.Print("});\n\n");
+			Ctx.Writer.Print(");\n\n");
 
-			Ctx.Writer.Print("PrepareContext(GrpcRequest->Context, Metadata, Timeout);\n");
-			Ctx.Writer.Print("auto Stub = $svc$::NewStub(Thread->GetChannel());\n", "svc", ProtoServiceType);
-			Ctx.Writer.Print("Stub->Async$method$(&GrpcRequest->Context, ProtoRequest, Thread->GetCompletionQueue(), GrpcRequest);\n", "method", MethodName);
+			Ctx.Writer.Print("GrpcRequest->Start(Thread->GetCompletionQueue());\n");
 		}
 	}
 };

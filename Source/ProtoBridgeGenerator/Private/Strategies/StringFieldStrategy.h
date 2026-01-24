@@ -21,17 +21,17 @@ protected:
         if (Field->type() == FieldDescriptor::TYPE_BYTES)
         {
             std::string Target = Field->is_repeated() ? ProtoTarget + "()" : "OutProto.mutable_" + std::string(Field->name()) + "()";
-            Ctx.Writer.Print("FProtobufUtils::ByteArrayToStdString($val$, *$target$);\n", "val", UeVal, "target", Target);
+            Ctx.Writer.Print("FProtobufStringUtils::ByteArrayToStdString($val$, *$target$);\n", "val", UeVal, "target", Target);
         }
         else
         {
             if (Field->is_repeated())
             {
-                Ctx.Writer.Print("*$target$() = FProtobufUtils::FStringToStdString($val$);\n", "target", ProtoTarget, "val", UeVal);
+                Ctx.Writer.Print("*$target$() = FProtobufStringUtils::FStringToStdString($val$);\n", "target", ProtoTarget, "val", UeVal);
             }
             else
             {
-                Ctx.Writer.Print("$target$(FProtobufUtils::FStringToStdString($val$));\n", "target", ProtoTarget, "val", UeVal);
+                Ctx.Writer.Print("$target$(FProtobufStringUtils::FStringToStdString($val$));\n", "target", ProtoTarget, "val", UeVal);
             }
         }
     }
@@ -40,11 +40,11 @@ protected:
     {
         if (Field->type() == FieldDescriptor::TYPE_BYTES)
         {
-            Ctx.Writer.Print("FProtobufUtils::StdStringToByteArray($val$, $target$);\n", "val", ProtoVal, "target", UeTarget);
+            Ctx.Writer.Print("FProtobufStringUtils::StdStringToByteArray($val$, $target$);\n", "val", ProtoVal, "target", UeTarget);
         }
         else
         {
-            Ctx.Writer.Print("$target$ = FProtobufUtils::StdStringToFString($val$);\n", "target", UeTarget, "val", ProtoVal);
+            Ctx.Writer.Print("$target$ = FProtobufStringUtils::StdStringToFString($val$);\n", "target", UeTarget, "val", ProtoVal);
         }
     }
 

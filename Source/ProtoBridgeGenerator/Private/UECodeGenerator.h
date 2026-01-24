@@ -62,9 +62,8 @@ private:
 		Ctx.Writer.Print("#include \"Dom/JsonValue.h\"\n");
 		Ctx.Writer.Print("#include \"ProtobufAny.h\"\n");
 		
-		
 		Ctx.Writer.Print("#include \"GrpcTypes.h\"\n");
-		Ctx.Writer.Print("#include \"GrpcAsyncNodeBase.h\"\n");
+		Ctx.Writer.Print("#include \"GrpcBlueprintNode.h\"\n");
 
 		for (int i = 0; i < File->dependency_count(); ++i)
 		{
@@ -111,8 +110,12 @@ private:
 	void GenerateSource(const FileDescriptor* File, const std::string& BaseName, FGeneratorContext& Ctx, const std::vector<const Descriptor*>& Messages) const
 	{
 		Ctx.Writer.Print("#include \"$name$.ue.h\"\n", "name", BaseName);
-		Ctx.Writer.Print("#include \"ProtobufUtils.h\"\n");
-		Ctx.Writer.Print("#include \"GrpcRequest.h\"\n");
+		Ctx.Writer.Print("#include \"ProtobufStringUtils.h\"\n");
+		Ctx.Writer.Print("#include \"ProtobufMathUtils.h\"\n");
+		Ctx.Writer.Print("#include \"ProtobufStructUtils.h\"\n");
+		Ctx.Writer.Print("#include \"ProtobufReflectionUtils.h\"\n");
+		Ctx.Writer.Print("#include \"ProtobufContainerUtils.h\"\n");
+		Ctx.Writer.Print("#include \"GrpcUnaryRequest.h\"\n");
 		Ctx.Writer.Print("#include \"ProtoBridgeSubsystem.h\"\n");
 		
 		Ctx.Writer.Print("\n#pragma warning(push)\n");

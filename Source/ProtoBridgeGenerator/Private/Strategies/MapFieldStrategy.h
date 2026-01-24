@@ -48,7 +48,7 @@ public:
 
 		std::string KeyStr = "Elem.Key";
 		if (KeyField->type() == FieldDescriptor::TYPE_STRING) 
-			KeyStr = "FProtobufUtils::FStringToStdString(Elem.Key)";
+			KeyStr = "FProtobufStringUtils::FStringToStdString(Elem.Key)";
 
 		if (ValueField->type() == FieldDescriptor::TYPE_MESSAGE)
 		{
@@ -58,20 +58,15 @@ public:
 
 			 if (ValueTypeInfo)
 			 {
-				 if (ValueTypeInfo->UtilsFuncPrefix == "Json")
-				 {
-					  Ctx.Writer.Print("(void)google::protobuf::util::JsonStringToMessage(FProtobufUtils::FStringToStdString(Elem.Value), &MapVal);\n");
-				 }
-				 else
-				 {
-					  std::string Func = "FProtobufUtils::" + ValueTypeInfo->UtilsFuncPrefix + "ToProto";
-					  if (ValueTypeInfo->UtilsFuncPrefix == "Timestamp") Func = "FProtobufUtils::FDateTimeToTimestamp";
-					  else if (ValueTypeInfo->UtilsFuncPrefix == "Duration") Func = "FProtobufUtils::FTimespanToDuration";
-					  
-					  std::string ValArg = ValueTypeInfo->bIsCustomType ? "&MapVal" : "MapVal";
+				  std::string FuncName = ValueTypeInfo->UtilityClass + "::" + ValueTypeInfo->UtilsFuncPrefix + "ToProto";
+				  
+				  if (ValueTypeInfo->UtilsFuncPrefix == "FDateTime") FuncName = "FProtobufMathUtils::FDateTimeToTimestamp";
+				  else if (ValueTypeInfo->UtilsFuncPrefix == "FTimespan") FuncName = "FProtobufMathUtils::FTimespanToDuration";
+				  else if (ValueTypeInfo->UtilsFuncPrefix == "Any") FuncName = "FProtobufReflectionUtils::AnyToProto";
 
-					  Ctx.Writer.Print("$func$(Elem.Value, $arg$);\n", "func", Func, "arg", ValArg);
-				 }
+				  std::string ValArg = ValueTypeInfo->bIsCustomType ? "&MapVal" : "MapVal";
+
+				  Ctx.Writer.Print("$func$(Elem.Value, $arg$);\n", "func", FuncName, "arg", ValArg);
 			 }
 			 else
 			 {
@@ -82,7 +77,7 @@ public:
 		{
 			std::string ValStr = "Elem.Value";
 			if (ValueField->type() == FieldDescriptor::TYPE_STRING) 
-				ValStr = "FProtobufUtils::FStringToStdString(Elem.Value)";
+				ValStr = "FProtobufStringUtils::FStringToStdString(Elem.Value)";
 			else if (ValueField->type() == FieldDescriptor::TYPE_ENUM)
 				ValStr = "static_cast<" + Ctx.GetProtoCppType(ValueField->enum_type()) + ">(Elem.Value)";
 
@@ -97,7 +92,7 @@ public:
 
 		std::string KeyStr = "Elem.first";
 		if (KeyField->type() == FieldDescriptor::TYPE_STRING) 
-			KeyStr = "FProtobufUtils::StdStringToFString(Elem.first)";
+			KeyStr = "FProtobufStringUtils::StdStringToFString(Elem.first)";
 
 		if (ValueField->type() == FieldDescriptor::TYPE_MESSAGE)
 		{
@@ -106,20 +101,13 @@ public:
 			
 			if (ValueTypeInfo)
 			{
-				if (ValueTypeInfo->UtilsFuncPrefix == "Json")
-				{
-					 Ctx.Writer.Print("std::string JsonStr;\n");
-					 Ctx.Writer.Print("(void)google::protobuf::util::MessageToJsonString(Elem.second, &JsonStr);\n");
-					 Ctx.Writer.Print("Val = FProtobufUtils::StdStringToFString(JsonStr);\n");
-				}
-				else
-				{
-					std::string Func = "FProtobufUtils::ProtoTo" + ValueTypeInfo->UtilsFuncPrefix;
-					if (ValueTypeInfo->UtilsFuncPrefix == "Timestamp") Func = "FProtobufUtils::TimestampToFDateTime";
-					else if (ValueTypeInfo->UtilsFuncPrefix == "Duration") Func = "FProtobufUtils::DurationToFTimespan";
-					
-					Ctx.Writer.Print("Val = $func$(Elem.second);\n", "func", Func);
-				}
+				std::string FuncName = ValueTypeInfo->UtilityClass + "::ProtoTo" + ValueTypeInfo->UtilsFuncPrefix;
+				
+				if (ValueTypeInfo->UtilsFuncPrefix == "FDateTime") FuncName = "FProtobufMathUtils::TimestampToFDateTime";
+				else if (ValueTypeInfo->UtilsFuncPrefix == "FTimespan") FuncName = "FProtobufMathUtils::DurationToFTimespan";
+				else if (ValueTypeInfo->UtilsFuncPrefix == "Any") FuncName = "FProtobufReflectionUtils::ProtoToAny";
+				
+				Ctx.Writer.Print("Val = $func$(Elem.second);\n", "func", FuncName);
 			}
 			else
 			{
@@ -130,7 +118,7 @@ public:
 		{
 			std::string ValStr = "Elem.second";
 			if (ValueField->type() == FieldDescriptor::TYPE_STRING) 
-				ValStr = "FProtobufUtils::StdStringToFString(Elem.second)";
+				ValStr = "FProtobufStringUtils::StdStringToFString(Elem.second)";
 			else if (ValueField->type() == FieldDescriptor::TYPE_ENUM)
 				ValStr = "static_cast<" + GetUeTypeName(ValueField) + ">(Elem.second)";
 
