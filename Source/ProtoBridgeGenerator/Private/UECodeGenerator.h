@@ -5,6 +5,7 @@
 #include "Generators/EnumGenerator.h"
 #include "Generators/MessageGenerator.h"
 #include "Generators/ProtoLibraryGenerator.h"
+#include "Generators/ServiceGenerator.h"
 
 class FUeCodeGenerator : public CodeGenerator
 {
@@ -60,6 +61,10 @@ private:
 		Ctx.Writer.Print("#include \"Dom/JsonObject.h\"\n");
 		Ctx.Writer.Print("#include \"Dom/JsonValue.h\"\n");
 		Ctx.Writer.Print("#include \"ProtobufAny.h\"\n");
+		
+		
+		Ctx.Writer.Print("#include \"GrpcTypes.h\"\n");
+		Ctx.Writer.Print("#include \"GrpcAsyncNodeBase.h\"\n");
 
 		for (int i = 0; i < File->dependency_count(); ++i)
 		{
@@ -76,6 +81,7 @@ private:
 		Ctx.Writer.Print("#pragma push_macro(\"TEXT\")\n#undef TEXT\n");
 		
 		Ctx.Writer.Print("#include \"$filename$.pb.h\"\n", "filename", BaseName);
+		Ctx.Writer.Print("#include \"$filename$.grpc.pb.h\"\n", "filename", BaseName);
 		
 		Ctx.Writer.Print("#pragma pop_macro(\"TEXT\")\n");
 		Ctx.Writer.Print("#pragma pop_macro(\"verify\")\n");
@@ -95,12 +101,19 @@ private:
 		}
 
 		FProtoLibraryGenerator::GenerateHeader(Ctx, BaseName, Messages);
+
+		for (int i = 0; i < File->service_count(); ++i)
+		{
+			FServiceGenerator::GenerateHeader(Ctx, File->service(i));
+		}
 	}
 
 	void GenerateSource(const FileDescriptor* File, const std::string& BaseName, FGeneratorContext& Ctx, const std::vector<const Descriptor*>& Messages) const
 	{
 		Ctx.Writer.Print("#include \"$name$.ue.h\"\n", "name", BaseName);
 		Ctx.Writer.Print("#include \"ProtobufUtils.h\"\n");
+		Ctx.Writer.Print("#include \"GrpcRequest.h\"\n");
+		Ctx.Writer.Print("#include \"ProtoBridgeSubsystem.h\"\n");
 		
 		Ctx.Writer.Print("\n#pragma warning(push)\n");
 		Ctx.Writer.Print("#pragma warning(disable: 4800 4125 4668 4541 4946 4715)\n\n");
@@ -115,6 +128,11 @@ private:
 		}
 
 		FProtoLibraryGenerator::GenerateSource(Ctx, BaseName, Messages);
+		
+		for (int i = 0; i < File->service_count(); ++i)
+		{
+			FServiceGenerator::GenerateSource(Ctx, File->service(i));
+		}
 		
 		Ctx.Writer.Print("\n#pragma warning(pop)\n");
 	}
