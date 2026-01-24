@@ -14,6 +14,7 @@ public:
 private:
 	void RegisterMenus();
 	void OnCompileButtonClicked();
-	
+	void OnEngineLoopComplete();
+
 	TSharedPtr<FProtoBridgeUIManager> UIManager;
 };

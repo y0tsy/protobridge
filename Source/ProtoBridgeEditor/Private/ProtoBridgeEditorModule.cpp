@@ -26,8 +26,10 @@ void FProtoBridgeEditorModule::StartupModule()
 		FProtoBridgeFileManager::CleanupOldTempFiles(TempDir, FProtoBridgeDefs::MaxTempFileAgeSeconds);
 	});
 
-	UIManager = MakeShared<FProtoBridgeUIManager>();
-	UIManager->Initialize();
+	if (FCoreDelegates::OnFEngineLoopInitComplete.IsBound())
+	{
+		FCoreDelegates::OnFEngineLoopInitComplete.AddRaw(this, &FProtoBridgeEditorModule::OnEngineLoopComplete);
+	}
 
 	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FProtoBridgeEditorModule::RegisterMenus));
 }
@@ -104,6 +106,12 @@ void FProtoBridgeEditorModule::OnCompileButtonClicked()
 
 		Subsystem->Compile(Config);
 	}
+}
+
+void FProtoBridgeEditorModule::OnEngineLoopComplete()
+{
+	UIManager = MakeShared<FProtoBridgeUIManager>();
+	UIManager->Initialize();
 }
 
 #undef LOCTEXT_NAMESPACE
