@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GrpcOperationBase.h"
 #include "Async/TaskGraphInterfaces.h"
-#include "ProtobufUtils.h"
 
 template <typename ResponseType>
 class TGrpcUnaryRequest : public FGrpcOperationBase
