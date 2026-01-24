@@ -119,13 +119,14 @@ private:
 			
 			Ctx.Writer.Print("auto Stub = $svc$::NewStub(Thread->GetChannel());\n", "svc", ProtoServiceType);
 
-			Ctx.Writer.Print("auto* GrpcRequest = new TGrpcUnaryRequest<$proto_out$>(\n", "proto_out", ProtoOutputType);
+			Ctx.Writer.Print("TGrpcUnaryRequest<$proto_out$>* GrpcRequest = nullptr;\n", "proto_out", ProtoOutputType);
+			Ctx.Writer.Print("GrpcRequest = new TGrpcUnaryRequest<$proto_out$>(\n", "proto_out", ProtoOutputType);
 			Ctx.Writer.Indent();
 			Ctx.Writer.Print("Metadata, Timeout,\n");
 			
-			Ctx.Writer.Print("[Stub, ProtoRequest, this](grpc::CompletionQueue* CQ, void* Tag) mutable {\n");
+			Ctx.Writer.Print("[Stub = std::move(Stub), ProtoRequest, &GrpcRequest](grpc::CompletionQueue* CQ, void* Tag) mutable {\n");
 			Ctx.Writer.Indent();
-			Ctx.Writer.Print("return Stub->Async$method$(&GetContext(), ProtoRequest, CQ, Tag);\n", "method", MethodName);
+			Ctx.Writer.Print("return Stub->Async$method$(&GrpcRequest->GetContext(), ProtoRequest, CQ);\n", "method", MethodName);
 			Ctx.Writer.Outdent();
 			Ctx.Writer.Print("},\n");
 
