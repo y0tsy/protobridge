@@ -25,6 +25,16 @@ enum class EGrpcCode : uint8
 	Unauthenticated = 16
 };
 
+UENUM(BlueprintType)
+enum class EGrpcStreamState : uint8
+{
+	Connecting,
+	Ready,
+	Writing,
+	Reading,
+	Closed
+};
+
 USTRUCT(BlueprintType)
 struct PROTOBRIDGE_API FGrpcResult
 {
@@ -42,3 +52,7 @@ struct PROTOBRIDGE_API FGrpcResult
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "gRPC")
 	TMap<FString, FString> Metadata;
 };
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FGrpcUnaryResponseDelegate, const FGrpcResult&, Result, const TArray<uint8>&, ResponseData);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FGrpcStreamDataDelegate, const FGrpcResult&, Result, const TArray<uint8>&, Data);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGrpcStreamStateDelegate, EGrpcStreamState, NewState);

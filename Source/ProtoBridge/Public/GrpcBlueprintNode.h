@@ -3,12 +3,12 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintAsyncActionBase.h"
 #include "GrpcIncludes.h"
-#include "GrpcAsyncNodeBase.generated.h"
+#include "GrpcBlueprintNode.generated.h"
 
 class UProtoBridgeSubsystem;
 
 UCLASS(Abstract)
-class PROTOBRIDGE_API UGrpcAsyncNodeBase : public UBlueprintAsyncActionBase
+class PROTOBRIDGE_API UGrpcBlueprintNode : public UBlueprintAsyncActionBase
 {
 	GENERATED_BODY()
 

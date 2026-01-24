@@ -1,9 +1,10 @@
-﻿#include "GrpcAsyncNodeBase.h"
+﻿#include "GrpcBlueprintNode.h"
 #include "ProtoBridgeSubsystem.h"
 #include "Engine/Engine.h"
-#include "ProtobufUtils.h"
+#include "ProtobufStringUtils.h"
+#include <chrono>
 
-UProtoBridgeSubsystem* UGrpcAsyncNodeBase::GetSubsystem() const
+UProtoBridgeSubsystem* UGrpcBlueprintNode::GetSubsystem() const
 {
 	if (!GetWorld())
 	{
@@ -19,7 +20,7 @@ UProtoBridgeSubsystem* UGrpcAsyncNodeBase::GetSubsystem() const
 	return GI->GetSubsystem<UProtoBridgeSubsystem>();
 }
 
-void UGrpcAsyncNodeBase::PrepareContext(grpc::ClientContext& Context, const TMap<FString, FString>& Metadata, float TimeoutSeconds)
+void UGrpcBlueprintNode::PrepareContext(grpc::ClientContext& Context, const TMap<FString, FString>& Metadata, float TimeoutSeconds)
 {
 	if (TimeoutSeconds > 0.0f)
 	{
@@ -31,8 +32,8 @@ void UGrpcAsyncNodeBase::PrepareContext(grpc::ClientContext& Context, const TMap
 	for (const TPair<FString, FString>& Pair : Metadata)
 	{
 		std::string Key, Value;
-		FProtobufUtils::FStringToStdString(Pair.Key, Key);
-		FProtobufUtils::FStringToStdString(Pair.Value, Value);
+		FProtobufStringUtils::FStringToStdString(Pair.Key, Key);
+		FProtobufStringUtils::FStringToStdString(Pair.Value, Value);
 		Context.AddMetadata(Key, Value);
 	}
 }

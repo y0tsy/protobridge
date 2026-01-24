@@ -1,41 +1,46 @@
 ﻿#include "GrpcClientThread.h"
-#include "IGrpcRequest.h"
-#include "HAL/RunnableThread.h"
+#include "ProtobufStringUtils.h"
 
-FGrpcClientThread::FGrpcClientThread(const FString& InAddress, const FString& InRootCert)
-	: Address(InAddress)
+FGrpcClientThread::FGrpcClientThread(const FString& InAddress, const FString& InRootCert, const FString& InClientCert, const FString& InPrivateKey)
+	: FGrpcWorkerThread(FString::Printf(TEXT("GrpcClient_%s"), *InAddress))
+	, Address(InAddress)
 	, RootCert(InRootCert)
-	, Thread(nullptr)
-	, bIsRunning(false)
+	, ClientCert(InClientCert)
+	, PrivateKey(InPrivateKey)
 {
-	Thread = FRunnableThread::Create(this, *FString::Printf(TEXT("GrpcThread_%s"), *InAddress), 0, TPri_Normal);
 }
 
 FGrpcClientThread::~FGrpcClientThread()
 {
-	if (Thread)
-	{
-		Thread->Kill(true);
-		delete Thread;
-		Thread = nullptr;
-	}
 }
 
 bool FGrpcClientThread::Init()
 {
-	bIsRunning = true;
-	
+	if (!FGrpcWorkerThread::Init())
+	{
+		return false;
+	}
+
 	grpc::ChannelArguments Args;
 	Args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
 	Args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, 10000);
 	Args.SetInt(GRPC_ARG_HTTP2_BDP_PROBE, 1);
+	Args.SetInt(GRPC_ARG_MAX_RECEIVE_MESSAGE_LENGTH, -1);
+	Args.SetInt(GRPC_ARG_MAX_SEND_MESSAGE_LENGTH, -1);
 
 	std::shared_ptr<grpc::ChannelCredentials> Creds;
 
 	if (!RootCert.IsEmpty())
 	{
 		grpc::SslCredentialsOptions SslOpts;
-		SslOpts.pem_root_certs = std::string(TCHAR_TO_UTF8(*RootCert));
+		FProtobufStringUtils::FStringToStdString(RootCert, SslOpts.pem_root_certs);
+		
+		if (!ClientCert.IsEmpty() && !PrivateKey.IsEmpty())
+		{
+			FProtobufStringUtils::FStringToStdString(ClientCert, SslOpts.pem_cert_chain);
+			FProtobufStringUtils::FStringToStdString(PrivateKey, SslOpts.pem_private_key);
+		}
+
 		Creds = grpc::SslCredentials(SslOpts);
 	}
 	else
@@ -43,48 +48,15 @@ bool FGrpcClientThread::Init()
 		Creds = grpc::InsecureChannelCredentials();
 	}
 
-	Channel = grpc::CreateCustomChannel(std::string(TCHAR_TO_UTF8(*Address)), Creds, Args);
-	CompletionQueue = std::make_unique<grpc::CompletionQueue>();
+	std::string StdAddress;
+	FProtobufStringUtils::FStringToStdString(Address, StdAddress);
+
+	Channel = grpc::CreateCustomChannel(StdAddress, Creds, Args);
 
 	return true;
-}
-
-uint32 FGrpcClientThread::Run()
-{
-	void* Tag;
-	bool bOk;
-
-	while (bIsRunning && CompletionQueue->Next(&Tag, &bOk))
-	{
-		if (Tag)
-		{
-			IGrpcRequest* Request = static_cast<IGrpcRequest*>(Tag);
-			Request->OnComplete(bOk);
-		}
-	}
-
-	return 0;
-}
-
-void FGrpcClientThread::Stop()
-{
-	bIsRunning = false;
-	if (CompletionQueue)
-	{
-		CompletionQueue->Shutdown();
-	}
-}
-
-void FGrpcClientThread::Exit()
-{
 }
 
 std::shared_ptr<grpc::Channel> FGrpcClientThread::GetChannel() const
 {
 	return Channel;
-}
-
-grpc::CompletionQueue* FGrpcClientThread::GetCompletionQueue()
-{
-	return CompletionQueue.get();
 }

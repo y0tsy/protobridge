@@ -1,94 +1,103 @@
 ﻿#include "ProtoBridgeSubsystem.h"
-#include "Misc/ConfigCacheIni.h"
-#include "Misc/FileHelper.h"
-#include "Misc/Paths.h"
-
-void UProtoBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
-{
-	Super::Initialize(Collection);
-	LoadConfigAndCreateThreads();
-}
 
 void UProtoBridgeSubsystem::Deinitialize()
 {
-	for (auto& Pair : ClientThreads)
 	{
-		if (Pair.Value.IsValid())
+		FScopeLock Lock(&ClientsLock);
+		for (auto& Pair : Clients)
 		{
-			Pair.Value->Stop();
+			if (Pair.Value.IsValid())
+			{
+				Pair.Value->Stop();
+				Pair.Value->WaitForCompletion();
+			}
 		}
+		Clients.Empty();
 	}
-	ClientThreads.Empty();
+
+	StopServer();
+	ActiveServices.Empty();
+	ActiveInterceptors.Empty();
+
 	Super::Deinitialize();
 }
 
-TSharedPtr<FGrpcClientThread> UProtoBridgeSubsystem::GetClientThread(const FString& ServiceName)
+FGrpcClientThread* UProtoBridgeSubsystem::GetClient(const FString& ClientName, const FString& Address, const FString& RootCert)
 {
-	if (TSharedPtr<FGrpcClientThread>* Found = ClientThreads.Find(ServiceName))
+	FScopeLock Lock(&ClientsLock);
+
+	if (TSharedPtr<FGrpcClientThread>* Found = Clients.Find(ClientName))
 	{
-		return *Found;
+		return Found->Get();
 	}
+
+	TSharedPtr<FGrpcClientThread> NewClient = MakeShared<FGrpcClientThread>(Address, RootCert);
+	if (NewClient->Init())
+	{
+		Clients.Add(ClientName, NewClient);
+		return NewClient.Get();
+	}
+
 	return nullptr;
 }
 
-void UProtoBridgeSubsystem::LoadConfigAndCreateThreads()
+void UProtoBridgeSubsystem::RegisterService(TSubclassOf<UGrpcServerService> ServiceClass)
 {
-	const FString SectionName = TEXT("ProtoBridge.Services");
-	
-	if (!GConfig->DoesSectionExist(*SectionName, GGameIni))
+	if (!ServiceClass) return;
+
+	UGrpcServerService* Service = NewObject<UGrpcServerService>(this, ServiceClass);
+	if (Service)
 	{
-		return;
-	}
-
-	TArray<FString> SectionKeys;
-	GConfig->GetSection(*SectionName, SectionKeys, GGameIni);
-
-	TSet<FString> ProcessedServices;
-
-	for (const FString& Key : SectionKeys)
-	{
-		FString ServiceName, PropName;
-		if (!Key.Split(TEXT("."), &ServiceName, &PropName))
-		{
-			continue;
-		}
-
-		if (ProcessedServices.Contains(ServiceName))
-		{
-			continue;
-		}
-
-		FString Address;
-		GConfig->GetString(*SectionName, *(ServiceName + TEXT(".Address")), Address, GGameIni);
-
-		bool bEnableSSL = false;
-		GConfig->GetBool(*SectionName, *(ServiceName + TEXT(".EnableSSL")), bEnableSSL, GGameIni);
-
-		FString CertPath;
-		GConfig->GetString(*SectionName, *(ServiceName + TEXT(".CertPath")), CertPath, GGameIni);
-
-		FString RootCertContent;
-		if (bEnableSSL && !CertPath.IsEmpty())
-		{
-			RootCertContent = LoadCertificate(CertPath);
-		}
-
-		if (!Address.IsEmpty())
-		{
-			TSharedPtr<FGrpcClientThread> NewThread = MakeShared<FGrpcClientThread>(Address, RootCertContent);
-			ClientThreads.Add(ServiceName, NewThread);
-			ProcessedServices.Add(ServiceName);
-		}
+		ActiveServices.Add(Service->GetServicePrefix(), Service);
 	}
 }
 
-FString UProtoBridgeSubsystem::LoadCertificate(const FString& RelPath)
+void UProtoBridgeSubsystem::RegisterInterceptor(TSubclassOf<UGrpcInterceptor> InterceptorClass)
 {
-	FString FullPath = FPaths::ProjectContentDir() / RelPath;
-	FString Result;
-	if (FFileHelper::LoadFileToString(Result, *FullPath))
+	if (!InterceptorClass) return;
+
+	UGrpcInterceptor* Interceptor = NewObject<UGrpcInterceptor>(this, InterceptorClass);
+	if (Interceptor)
 	{
-		return Result;
+		ActiveInterceptors.Add(Interceptor);
 	}
-	return FString();
+}
+
+void UProtoBridgeSubsystem::StartServer(const FString& Address, const FString& ServerCert, const FString& PrivateKey)
+{
+	StopServer();
+
+	ServerThread = MakeShared<FGrpcServerThread>(Address, ServerCert, PrivateKey);
+	
+	if (ServerThread->Init())
+	{
+		ServerThread->StartGenericLoop([this](const FString& FullMethodName) -> UGrpcServerService*
+		{
+			FString CleanName = FullMethodName;
+			if (CleanName.StartsWith(TEXT("/")))
+			{
+				CleanName.RemoveAt(0);
+			}
+
+			FString ServiceName, MethodName;
+			if (CleanName.Split(TEXT("/"), &ServiceName, &MethodName))
+			{
+				if (UGrpcServerService** Found = ActiveServices.Find(ServiceName))
+				{
+					return *Found;
+				}
+			}
+			return nullptr;
+		});
+	}
+}
+
+void UProtoBridgeSubsystem::StopServer()
+{
+	if (ServerThread.IsValid())
+	{
+		ServerThread->Stop();
+		ServerThread->WaitForCompletion();
+		ServerThread.Reset();
+	}
 }
