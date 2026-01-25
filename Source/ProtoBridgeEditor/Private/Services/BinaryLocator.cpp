@@ -30,11 +30,6 @@ FString FBinaryLocator::ResolvePluginPath(const FProtoBridgeEnvironmentContext& 
 	return FindBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::PluginExecutableName);
 }
 
-FString FBinaryLocator::ResolveGrpcPluginPath(const FProtoBridgeEnvironmentContext& Context)
-{
-	return FindBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::GrpcPluginExecutableName);
-}
-
 FString FBinaryLocator::FindStandardIncludePath(const FString& ProtocPath)
 {
 	if (ProtocPath.IsEmpty() || !IFileManager::Get().FileExists(*ProtocPath))

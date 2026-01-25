@@ -38,26 +38,6 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 		return Plan;
 	}
 
-	bool bRequiresGrpc = false;
-	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
-	{
-		if (Mapping.bGenerateGrpc)
-		{
-			bRequiresGrpc = true;
-			break;
-		}
-	}
-
-	if (bRequiresGrpc)
-	{
-		FString GrpcPlugin = FBinaryLocator::ResolveGrpcPluginPath(Config.Environment);
-		if (GrpcPlugin.IsEmpty() || !IFileManager::Get().FileExists(*GrpcPlugin))
-		{
-			Plan.Diagnostics.Emplace(ELogVerbosity::Error, FString::Printf(TEXT("gRPC plugin (%s) not found, but gRPC generation is enabled. Searched in: %s"), *FProtoBridgeDefs::GrpcPluginExecutableName, *Config.Environment.PluginDirectory));
-			return Plan;
-		}
-	}
-
 	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
 	{
 		if (CancellationFlag && *CancellationFlag)
