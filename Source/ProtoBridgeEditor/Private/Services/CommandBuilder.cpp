@@ -32,18 +32,6 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 	SB << TEXT("--ue_out=") << SafeDestDir << TEXT("\n");
 	SB << TEXT("--cpp_out=") << SafeDestDir << TEXT("\n");
 	
-	if (Mapping.bGenerateGrpc)
-	{
-		const FString GrpcPluginPath = FBinaryLocator::ResolveGrpcPluginPath(Config.Environment);
-		if (!GrpcPluginPath.IsEmpty())
-		{
-			FString SafeGrpcPluginPath = GrpcPluginPath;
-			FPaths::NormalizeFilename(SafeGrpcPluginPath);
-			SB << TEXT("--plugin=protoc-gen-grpc=") << SafeGrpcPluginPath << TEXT("\n");
-			SB << TEXT("--grpc_out=") << SafeDestDir << TEXT("\n");
-		}
-	}
-	
 	SB << TEXT("--proto_path=") << SafeSourceDir << TEXT("\n");
 	
 	const FString StandardIncludePath = FBinaryLocator::FindStandardIncludePath(ProtocPath);

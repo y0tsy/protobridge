@@ -1,13 +1,13 @@
 #!/bin/bash
 set -e
 
-GRPC_VERSION="v1.76.0"
+PROTOBUF_VERSION="v33.4"
 CACHE_DIR=""
 COMPILER_LAUNCHER=""
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --grpc-version) GRPC_VERSION="$2"; shift ;;
+        --protobuf-version) PROTOBUF_VERSION="$2"; shift ;;
         --cache-dir) CACHE_DIR="$2"; shift ;;
         --compiler-launcher) COMPILER_LAUNCHER="$2"; shift ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
@@ -39,27 +39,27 @@ mkdir -p "$WORK_DIR"
 mkdir -p "$FINAL_LIB_ANDROID"
 mkdir -p "$FINAL_INCLUDE"
 
-SKIP_GRPC=false
+SKIP_PROTO=false
 
 if [ ! -z "$CACHE_DIR" ]; then
     if [ -f "$CACHE_DIR/completed.marker" ]; then
         echo "Cache Hit! Restoring from $CACHE_DIR..."
         cp -r "$CACHE_DIR/install_host" "$WORK_DIR/"
         cp -r "$CACHE_DIR/install_android" "$WORK_DIR/"
-        SKIP_GRPC=true
+        SKIP_PROTO=true
     else
-        echo "Cache Miss. Will build gRPC."
+        echo "Cache Miss. Will build Protobuf."
     fi
 fi
 
 cd "$WORK_DIR"
 
-if [ "$SKIP_GRPC" = false ]; then
-    echo "Cloning gRPC $GRPC_VERSION..."
-    git clone --recurse-submodules -b $GRPC_VERSION --depth 1 --shallow-submodules https://github.com/grpc/grpc.git grpc
-    cd grpc
+if [ "$SKIP_PROTO" = false ]; then
+    echo "Cloning Protobuf $PROTOBUF_VERSION..."
+    git clone --recurse-submodules -b $PROTOBUF_VERSION --depth 1 --shallow-submodules https://github.com/protocolbuffers/protobuf.git protobuf
+    cd protobuf
 
-    echo "--- PHASE 1: Building Host Tools (needed for cross-compile) ---"
+    echo "--- PHASE 1: Building Host Tools ---"
     cmake -S . -B build_host -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$INSTALL_HOST" \
@@ -68,20 +68,14 @@ if [ "$SKIP_GRPC" = false ]; then
         -DCMAKE_CXX_STANDARD=20 \
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
         -DBUILD_SHARED_LIBS=OFF \
-        -DgRPC_BUILD_TESTS=OFF \
         -Dprotobuf_BUILD_TESTS=OFF \
-        -DgRPC_SSL_PROVIDER=module \
-        -DgRPC_ZLIB_PROVIDER=module \
-        -DgRPC_CARES_PROVIDER=module \
-        -DgRPC_RE2_PROVIDER=module \
-        -DgRPC_PROTOBUF_PROVIDER=module \
+        -Dprotobuf_ABSL_PROVIDER=module \
         $LAUNCHER_FLAGS
 
     cmake --build build_host --config Release --target install
 
     echo "--- PHASE 2: Building Android Libs ---"
     HOST_PROTOC="$INSTALL_HOST/bin/protoc"
-    HOST_PLUGIN="$INSTALL_HOST/bin/grpc_cpp_plugin"
 
     cmake -S . -B build_android -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
@@ -95,15 +89,9 @@ if [ "$SKIP_GRPC" = false ]; then
         -DCMAKE_CXX_STANDARD=20 \
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
         -DBUILD_SHARED_LIBS=OFF \
-        -DgRPC_BUILD_TESTS=OFF \
         -Dprotobuf_BUILD_TESTS=OFF \
-        -DgRPC_SSL_PROVIDER=module \
-        -DgRPC_ZLIB_PROVIDER=module \
-        -DgRPC_CARES_PROVIDER=module \
-        -DgRPC_RE2_PROVIDER=module \
-        -DgRPC_PROTOBUF_PROVIDER=module \
-        -D_gRPC_PROTOBUF_PROTOC_EXECUTABLE="$HOST_PROTOC" \
-        -D_gRPC_CPP_PLUGIN="$HOST_PLUGIN" \
+        -Dprotobuf_ABSL_PROVIDER=module \
+        -Dprotobuf_BUILD_PROTOC_BINARIES=OFF \
         $LAUNCHER_FLAGS
 
     cmake --build build_android --config Release --target install

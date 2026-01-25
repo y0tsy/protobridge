@@ -9,7 +9,6 @@ struct PROTOBRIDGEEDITOR_API FProtoBridgeDefs
 	inline static const FString PluginName = TEXT("ProtoBridge");
 	inline static const FString ProtocExecutableName = TEXT("protoc");
 	inline static const FString PluginExecutableName = TEXT("bridge_generator");
-	inline static const FString GrpcPluginExecutableName = TEXT("grpc_cpp_plugin");
 	inline static const FString PluginGeneratorCommand = TEXT("protoc-gen-ue");
 	inline static const FString GeneratedFileExtension = TEXT(".h");
 	inline static const FString ArgFileExtension = TEXT(".args");

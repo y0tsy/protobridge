@@ -1,5 +1,5 @@
 param (
-    [string]$GrpcVersion = "v1.76.0",
+    [string]$ProtobufVersion = "v33.4",
     [string]$CacheDir = "",
     [string]$CompilerLauncher = ""
 )
@@ -24,18 +24,18 @@ if (!(Test-Path $FinalBinDir)) { New-Item -ItemType Directory -Path $FinalBinDir
 if (!(Test-Path $FinalLibDir)) { New-Item -ItemType Directory -Path $FinalLibDir -Force | Out-Null }
 if (!(Test-Path $FinalIncludeDir)) { New-Item -ItemType Directory -Path $FinalIncludeDir -Force | Out-Null }
 
-$SkipGrpcBuild = $false
+$SkipProtoBuild = $false
 
 if (-not [string]::IsNullOrEmpty($CacheDir)) {
     $CacheInstall = Join-Path $CacheDir "install"
     $CacheMarker = Join-Path $CacheDir "completed.marker"
 
     if ((Test-Path $CacheMarker) -and (Test-Path $CacheInstall)) {
-        Write-Host "Cache Hit! Restoring gRPC from $CacheDir..."
+        Write-Host "Cache Hit! Restoring Protobuf from $CacheDir..."
         Copy-Item -Path $CacheInstall -Destination $WorkDir -Recurse -Force
-        $SkipGrpcBuild = $true
+        $SkipProtoBuild = $true
     } else {
-        Write-Host "Cache Miss or Invalid. Will build gRPC."
+        Write-Host "Cache Miss or Invalid. Will build Protobuf."
     }
 }
 
@@ -48,14 +48,14 @@ if (-not [string]::IsNullOrEmpty($CompilerLauncher)) {
     $Launcher_Arg = "-DCMAKE_C_COMPILER_LAUNCHER=$CompilerLauncher -DCMAKE_CXX_COMPILER_LAUNCHER=$CompilerLauncher"
 }
 
-if (-not $SkipGrpcBuild) {
-    Write-Host "Cloning gRPC $GrpcVersion..."
-    git clone --recurse-submodules -b $GrpcVersion --depth 1 --shallow-submodules https://github.com/grpc/grpc.git
-    Set-Location "grpc"
+if (-not $SkipProtoBuild) {
+    Write-Host "Cloning Protobuf $ProtobufVersion..."
+    git clone --recurse-submodules -b $ProtobufVersion --depth 1 --shallow-submodules https://github.com/protocolbuffers/protobuf.git
+    Set-Location "protobuf"
 
-    Write-Host "--- Building gRPC (Dynamic CRT /MD) ---"
+    Write-Host "--- Building Protobuf (Dynamic CRT /MD) ---"
     $BuildDir = Join-Path $WorkDir "build"
-    $Cmd = "cmake -S . -B $BuildDir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$InstallDir -DCMAKE_C_FLAGS='/w' -DCMAKE_CXX_FLAGS='/w' -DCMAKE_CXX_STANDARD=20 -DBUILD_SHARED_LIBS=OFF -DgRPC_BUILD_TESTS=OFF -Dprotobuf_BUILD_TESTS=OFF -DgRPC_MSVC_STATIC_RUNTIME=OFF -Dprotobuf_MSVC_STATIC_RUNTIME=OFF -DgRPC_SSL_PROVIDER=module -DgRPC_ZLIB_PROVIDER=module -DgRPC_CARES_PROVIDER=module -DgRPC_RE2_PROVIDER=module -DgRPC_PROTOBUF_PROVIDER=module $Launcher_Arg"
+    $Cmd = "cmake -S . -B $BuildDir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$InstallDir -DCMAKE_C_FLAGS='/w' -DCMAKE_CXX_FLAGS='/w' -DCMAKE_CXX_STANDARD=20 -DBUILD_SHARED_LIBS=OFF -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_MSVC_STATIC_RUNTIME=OFF -Dprotobuf_ABSL_PROVIDER=module $Launcher_Arg"
     Invoke-Expression $Cmd
     cmake --build $BuildDir --config Release --target install
 

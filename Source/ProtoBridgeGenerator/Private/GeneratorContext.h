@@ -35,7 +35,7 @@ public:
 
     static void Log(const std::string& Msg)
     {
-        std::cerr << "[UEGen] " << Msg << std::endl;
+        std::cerr << "[BridgeGenerator] " << Msg << std::endl;
         std::cerr.flush();
     }
 

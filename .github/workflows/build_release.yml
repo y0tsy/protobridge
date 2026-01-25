@@ -10,7 +10,7 @@ on:
       - '.github/workflows/build_release.yml'
 
 env:
-  GRPC_VERSION: v1.76.0
+  PROTOBUF_VERSION: v33.4
 
 jobs:
   build-windows-msvc:
@@ -35,19 +35,19 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: windows-msvc-ccache-${{ env.GRPC_VERSION }}
+        key: windows-msvc-ccache-${{ env.PROTOBUF_VERSION }}
         variant: sccache
 
-    - name: Restore gRPC Cache
+    - name: Restore Protobuf Cache
       id: cache-windows
       uses: actions/cache@v4
       with:
-        path: ${{ github.workspace }}/gRPC_Cache
-        key: ${{ runner.os }}-msvc-md-grpc-${{ env.GRPC_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_win64.ps1') }}
+        path: ${{ github.workspace }}/Protobuf_Cache
+        key: ${{ runner.os }}-msvc-md-protobuf-${{ env.PROTOBUF_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_win64.ps1') }}
 
     - name: Build Win64
       run: |
-        & ./Source/ProtoBridgeThirdParty/scripts/build_win64.ps1 -GrpcVersion ${{ env.GRPC_VERSION }} -CacheDir "${{ github.workspace }}\gRPC_Cache" -CompilerLauncher "sccache"
+        & ./Source/ProtoBridgeThirdParty/scripts/build_win64.ps1 -ProtobufVersion ${{ env.PROTOBUF_VERSION }} -CacheDir "${{ github.workspace }}\Protobuf_Cache" -CompilerLauncher "sccache"
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -74,19 +74,19 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: linux-ccache-${{ env.GRPC_VERSION }}
+        key: linux-ccache-${{ env.PROTOBUF_VERSION }}
 
-    - name: Restore gRPC Cache
+    - name: Restore Protobuf Cache
       id: cache-linux
       uses: actions/cache@v4
       with:
-        path: ${{ github.workspace }}/gRPC_Cache
-        key: ${{ runner.os }}-grpc-${{ env.GRPC_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_linux.sh') }}
+        path: ${{ github.workspace }}/Protobuf_Cache
+        key: ${{ runner.os }}-protobuf-${{ env.PROTOBUF_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_linux.sh') }}
 
     - name: Build Linux
       run: |
         chmod +x Source/ProtoBridgeThirdParty/scripts/build_linux.sh
-        ./Source/ProtoBridgeThirdParty/scripts/build_linux.sh --grpc-version ${{ env.GRPC_VERSION }} --cache-dir "${{ github.workspace }}/gRPC_Cache" --compiler-launcher ccache
+        ./Source/ProtoBridgeThirdParty/scripts/build_linux.sh --protobuf-version ${{ env.PROTOBUF_VERSION }} --cache-dir "${{ github.workspace }}/Protobuf_Cache" --compiler-launcher ccache
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -119,19 +119,19 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: android-ccache-${{ env.GRPC_VERSION }}
+        key: android-ccache-${{ env.PROTOBUF_VERSION }}
 
-    - name: Restore gRPC Cache
+    - name: Restore Protobuf Cache
       id: cache-android
       uses: actions/cache@v4
       with:
-        path: ${{ github.workspace }}/gRPC_Cache
-        key: ${{ runner.os }}-android-grpc-${{ env.GRPC_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_android.sh') }}
+        path: ${{ github.workspace }}/Protobuf_Cache
+        key: ${{ runner.os }}-android-protobuf-${{ env.PROTOBUF_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_android.sh') }}
 
     - name: Build Android
       run: |
         chmod +x Source/ProtoBridgeThirdParty/scripts/build_android.sh
-        ./Source/ProtoBridgeThirdParty/scripts/build_android.sh --grpc-version ${{ env.GRPC_VERSION }} --cache-dir "${{ github.workspace }}/gRPC_Cache" --compiler-launcher ccache
+        ./Source/ProtoBridgeThirdParty/scripts/build_android.sh --protobuf-version ${{ env.PROTOBUF_VERSION }} --cache-dir "${{ github.workspace }}/Protobuf_Cache" --compiler-launcher ccache
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
@@ -158,19 +158,19 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: macos-ccache-${{ env.GRPC_VERSION }}
+        key: macos-ccache-${{ env.PROTOBUF_VERSION }}
 
-    - name: Restore gRPC Cache
+    - name: Restore Protobuf Cache
       id: cache-macos
       uses: actions/cache@v4
       with:
-        path: ${{ github.workspace }}/gRPC_Cache
-        key: ${{ runner.os }}-grpc-${{ env.GRPC_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_macos.sh') }}
+        path: ${{ github.workspace }}/Protobuf_Cache
+        key: ${{ runner.os }}-protobuf-${{ env.PROTOBUF_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_macos.sh') }}
 
     - name: Build macOS
       run: |
         chmod +x Source/ProtoBridgeThirdParty/scripts/build_macos.sh
-        ./Source/ProtoBridgeThirdParty/scripts/build_macos.sh --grpc-version ${{ env.GRPC_VERSION }} --cache-dir "${{ github.workspace }}/gRPC_Cache" --compiler-launcher ccache
+        ./Source/ProtoBridgeThirdParty/scripts/build_macos.sh --protobuf-version ${{ env.PROTOBUF_VERSION }} --cache-dir "${{ github.workspace }}/Protobuf_Cache" --compiler-launcher ccache
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -196,19 +196,19 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ios-ccache-${{ env.GRPC_VERSION }}
+        key: ios-ccache-${{ env.PROTOBUF_VERSION }}
 
-    - name: Restore gRPC Cache
+    - name: Restore Protobuf Cache
       id: cache-ios
       uses: actions/cache@v4
       with:
-        path: ${{ github.workspace }}/gRPC_Cache
-        key: ${{ runner.os }}-ios-grpc-${{ env.GRPC_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_ios.sh') }}
+        path: ${{ github.workspace }}/Protobuf_Cache
+        key: ${{ runner.os }}-ios-protobuf-${{ env.PROTOBUF_VERSION }}-${{ hashFiles('Source/ProtoBridgeThirdParty/scripts/build_ios.sh') }}
 
     - name: Build iOS
       run: |
         chmod +x Source/ProtoBridgeThirdParty/scripts/build_ios.sh
-        ./Source/ProtoBridgeThirdParty/scripts/build_ios.sh --grpc-version ${{ env.GRPC_VERSION }} --cache-dir "${{ github.workspace }}/gRPC_Cache" --compiler-launcher ccache
+        ./Source/ProtoBridgeThirdParty/scripts/build_ios.sh --protobuf-version ${{ env.PROTOBUF_VERSION }} --cache-dir "${{ github.workspace }}/Protobuf_Cache" --compiler-launcher ccache
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
