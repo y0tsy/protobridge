@@ -1,0 +1,113 @@
+﻿syntax = "proto3";
+
+package UnrealCommon;
+
+message FVectorProto {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+message FVector2DProto {
+  double x = 1;
+  double y = 2;
+}
+
+message FQuatProto {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+  double w = 4;
+}
+
+message FRotatorProto {
+  double pitch = 1;
+  double yaw = 2;
+  double roll = 3;
+}
+
+message FTransformProto {
+  FVectorProto location = 1;
+  FQuatProto rotation = 2;
+  FVectorProto scale = 3;
+}
+
+message FMatrixProto {
+  double m00 = 1; double m01 = 2; double m02 = 3; double m03 = 4;
+  double m10 = 5; double m11 = 6; double m12 = 7; double m13 = 8;
+  double m20 = 9; double m21 = 10; double m22 = 11; double m23 = 12;
+  double m30 = 13; double m31 = 14; double m32 = 15; double m33 = 16;
+}
+
+message FIntVectorProto {
+  int32 x = 1;
+  int32 y = 2;
+  int32 z = 3;
+}
+
+message FIntPointProto {
+  int32 x = 1;
+  int32 y = 2;
+}
+
+message FColorProto {
+  uint32 r = 1;
+  uint32 g = 2;
+  uint32 b = 3;
+  uint32 a = 4;
+}
+
+message FLinearColorProto {
+  float r = 1;
+  float g = 2;
+  float b = 3;
+  float a = 4;
+}
+
+message FBoxProto {
+  FVectorProto min = 1;
+  FVectorProto max = 2;
+  bool is_valid = 3;
+}
+
+message FBox2DProto {
+  FVector2DProto min = 1;
+  FVector2DProto max = 2;
+  bool is_valid = 3;
+}
+
+message FSphereProto {
+  FVectorProto center = 1;
+  double w = 2;
+}
+
+message FGuidProto {
+  uint32 a = 1;
+  uint32 b = 2;
+  uint32 c = 3;
+  uint32 d = 4;
+}
+
+message FNameProto {
+  string name = 1;
+}
+
+message FTextProto {
+  string culture_invariant_string = 1;
+}
+
+message FSoftObjectPathProto {
+  string asset_path = 1;
+}
+
+message FSoftClassPathProto {
+  string asset_path = 1;
+}
+
+message FGameplayTagProto {
+  string tag_name = 1;
+}
+
+message FGameplayTagContainerProto {
+  repeated string gameplay_tags = 1;
+}
