@@ -6,6 +6,7 @@
 #include "GameplayTagContainer.h"
 #include "UObject/SoftObjectPath.h"
 #include "ProtobufStringUtils.h"
+#include "ProtoBridgeTypes.h"
 
 namespace google {
 namespace protobuf {
@@ -14,29 +15,16 @@ namespace protobuf {
 }
 }
 
-enum class EProtobufInt64Strategy : uint8
-{
-	AlwaysNumber,
-	AlwaysString,
-	ErrorOnPrecisionLoss
-};
-
 class PROTOBRIDGECORE_API FProtobufReflectionUtils
 {
 public:
-	static bool FVariantToProtoValue(const FVariant& InVariant, google::protobuf::Value& OutValue);
+	static bool FVariantToProtoValue(const FVariant& InVariant, google::protobuf::Value& OutValue, const FProtoSerializationContext& Context);
 	static FVariant ProtoValueToFVariant(const google::protobuf::Value& InValue);
 	
-	using FVariantEncoder = TFunction<bool(const FVariant&, google::protobuf::Value&)>;
-	static void RegisterVariantEncoder(EVariantTypes Type, FVariantEncoder Encoder);
-
-	static void SetInt64SerializationStrategy(EProtobufInt64Strategy InStrategy);
-	static EProtobufInt64Strategy GetInt64SerializationStrategy();
-
-	static void Shutdown();
+	static bool ConvertInt64ToProtoValue(int64 InVal, google::protobuf::Value& OutValue, EProtobufInt64Strategy Strategy);
 
 	static void AnyToProto(const FProtobufAny& InAny, google::protobuf::Any& OutAny);
-	static FProtobufAny ProtoToAny(const google::protobuf::Any& InAny);
+	static bool ProtoToAny(const google::protobuf::Any& InAny, FProtobufAny& OutAny);
 
 	template <typename T_Proto>
 	static void FSoftObjectPathToProto(const FSoftObjectPath& InPath, T_Proto* OutProto) { 
@@ -66,7 +54,7 @@ public:
 	}
 	template <typename T_Proto>
 	static FGameplayTag ProtoToFGameplayTag(const T_Proto& InProto) { 
-		return FGameplayTag::RequestGameplayTag(FProtobufStringUtils::StdStringToFName(InProto.tag_name())); 
+		return FGameplayTag::RequestGameplayTag(FProtobufStringUtils::StdStringToFName(InProto.tag_name()), false); 
 	}
 
 	template <typename T_Proto>
@@ -78,7 +66,14 @@ public:
 	template <typename T_Proto>
 	static FGameplayTagContainer ProtoToFGameplayTagContainer(const T_Proto& InProto) {
 		FGameplayTagContainer Result;
-		for (const std::string& TagStr : InProto.gameplay_tags()) Result.AddTag(FGameplayTag::RequestGameplayTag(FProtobufStringUtils::StdStringToFName(TagStr)));
+		for (const std::string& TagStr : InProto.gameplay_tags()) 
+		{
+			FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FProtobufStringUtils::StdStringToFName(TagStr), false);
+			if (Tag.IsValid())
+			{
+				Result.AddTag(Tag);
+			}
+		}
 		return Result;
 	}
 };

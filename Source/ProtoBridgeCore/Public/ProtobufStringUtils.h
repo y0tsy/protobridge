@@ -31,5 +31,5 @@ public:
 	static FGuid StdStringToFGuid(const std::string& InStr);
 
 	static void ByteArrayToStdString(const TArray<uint8>& InBytes, std::string& OutStr);
-	static void StdStringToByteArray(const std::string& InStr, TArray<uint8>& OutBytes);
+	static bool StdStringToByteArray(const std::string& InStr, TArray<uint8>& OutBytes);
 };

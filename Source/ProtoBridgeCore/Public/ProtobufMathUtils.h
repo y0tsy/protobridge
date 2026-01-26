@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ProtobufStringUtils.h"
+#include <type_traits>
 
 namespace google {
 namespace protobuf {
@@ -9,6 +10,23 @@ namespace protobuf {
 	class Duration;
 	template <typename T> class RepeatedField;
 }
+}
+
+namespace ProtoMathCheck {
+	template<typename T, typename = void> struct HasSetX : std::false_type {};
+	template<typename T> struct HasSetX<T, std::void_t<decltype(std::declval<T>().set_x(0.0))>> : std::true_type {};
+
+	template<typename T, typename = void> struct HasSetY : std::false_type {};
+	template<typename T> struct HasSetY<T, std::void_t<decltype(std::declval<T>().set_y(0.0))>> : std::true_type {};
+
+	template<typename T, typename = void> struct HasSetZ : std::false_type {};
+	template<typename T> struct HasSetZ<T, std::void_t<decltype(std::declval<T>().set_z(0.0))>> : std::true_type {};
+
+	template<typename T, typename = void> struct HasSetW : std::false_type {};
+	template<typename T> struct HasSetW<T, std::void_t<decltype(std::declval<T>().set_w(0.0))>> : std::true_type {};
+	
+	template<typename T, typename = void> struct HasX : std::false_type {};
+	template<typename T> struct HasX<T, std::void_t<decltype(std::declval<T>().x())>> : std::true_type {};
 }
 
 class PROTOBRIDGECORE_API FProtobufMathUtils
@@ -25,45 +43,56 @@ public:
 
 	template <typename T_Proto>
 	static bool FVectorToProto(const FVector& In, T_Proto* Out) {
+		static_assert(ProtoMathCheck::HasSetX<T_Proto>::value, "Proto message type must have set_x(double)");
+		static_assert(ProtoMathCheck::HasSetY<T_Proto>::value, "Proto message type must have set_y(double)");
+		static_assert(ProtoMathCheck::HasSetZ<T_Proto>::value, "Proto message type must have set_z(double)");
 		if (!Out) return false;
 		Out->set_x(In.X); Out->set_y(In.Y); Out->set_z(In.Z);
 		return true;
 	}
 	template <typename T_Proto>
 	static FVector ProtoToFVector(const T_Proto& In) {
+		static_assert(ProtoMathCheck::HasX<T_Proto>::value, "Proto message type must have x()");
 		return FVector(In.x(), In.y(), In.z());
 	}
 
 	template <typename T_Proto>
 	static bool FVector2DToProto(const FVector2D& In, T_Proto* Out) {
+		static_assert(ProtoMathCheck::HasSetX<T_Proto>::value, "Proto message type must have set_x(double)");
+		static_assert(ProtoMathCheck::HasSetY<T_Proto>::value, "Proto message type must have set_y(double)");
 		if (!Out) return false;
 		Out->set_x(In.X); Out->set_y(In.Y);
 		return true;
 	}
 	template <typename T_Proto>
 	static FVector2D ProtoToFVector2D(const T_Proto& In) {
+		static_assert(ProtoMathCheck::HasX<T_Proto>::value, "Proto message type must have x()");
 		return FVector2D(In.x(), In.y());
 	}
 
 	template <typename T_Proto>
 	static bool FIntVectorToProto(const FIntVector& In, T_Proto* Out) {
+		static_assert(ProtoMathCheck::HasSetX<T_Proto>::value, "Proto message type must have set_x");
 		if (!Out) return false;
 		Out->set_x(In.X); Out->set_y(In.Y); Out->set_z(In.Z);
 		return true;
 	}
 	template <typename T_Proto>
 	static FIntVector ProtoToFIntVector(const T_Proto& In) {
+		static_assert(ProtoMathCheck::HasX<T_Proto>::value, "Proto message type must have x()");
 		return FIntVector(In.x(), In.y(), In.z());
 	}
 
 	template <typename T_Proto>
 	static bool FIntPointToProto(const FIntPoint& In, T_Proto* Out) {
+		static_assert(ProtoMathCheck::HasSetX<T_Proto>::value, "Proto message type must have set_x");
 		if (!Out) return false;
 		Out->set_x(In.X); Out->set_y(In.Y);
 		return true;
 	}
 	template <typename T_Proto>
 	static FIntPoint ProtoToFIntPoint(const T_Proto& In) {
+		static_assert(ProtoMathCheck::HasX<T_Proto>::value, "Proto message type must have x()");
 		return FIntPoint(In.x(), In.y());
 	}
 
@@ -80,12 +109,14 @@ public:
 
 	template <typename T_Proto>
 	static bool FQuatToProto(const FQuat& In, T_Proto* Out) {
+		static_assert(ProtoMathCheck::HasSetW<T_Proto>::value, "Proto message type must have set_w");
 		if (!Out) return false;
 		Out->set_x(In.X); Out->set_y(In.Y); Out->set_z(In.Z); Out->set_w(In.W);
 		return true;
 	}
 	template <typename T_Proto>
 	static FQuat ProtoToFQuat(const T_Proto& In) {
+		static_assert(ProtoMathCheck::HasX<T_Proto>::value, "Proto message type must have x()");
 		return FQuat(In.x(), In.y(), In.z(), In.w());
 	}
 
