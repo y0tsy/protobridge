@@ -2,13 +2,16 @@
 
 #include <string>
 
-namespace google {
-	namespace protobuf {
-		namespace io {
-			class Printer;
-		}
-	}
-}
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4800 4125 4668 4541 4946)
+#endif
+
+#include <google/protobuf/io/printer.h>
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 class FCodeWriter
 {
@@ -18,7 +21,10 @@ public:
 	void Print(const char* Text);
 	
 	template<typename... Args>
-	void Print(const char* Format, Args&&... args);
+	void Print(const char* Format, Args&&... args)
+	{
+		P->Print(Format, std::forward<Args>(args)...);
+	}
 
 	void Indent();
 	void Outdent();
@@ -26,12 +32,6 @@ public:
 private:
 	google::protobuf::io::Printer* P;
 };
-
-template<typename... Args>
-void FCodeWriter::Print(const char* Format, Args&&... args)
-{
-	PrintImpl(Format, std::forward<Args>(args)...);
-}
 
 class FScopedBlock
 {

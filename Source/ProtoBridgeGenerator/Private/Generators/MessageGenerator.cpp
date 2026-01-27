@@ -3,6 +3,7 @@
 #include "EnumGenerator.h"
 #include "OneOfGenerator.h"
 #include "../Strategies/FieldStrategyFactory.h"
+#include "../Strategies/FieldStrategy.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
