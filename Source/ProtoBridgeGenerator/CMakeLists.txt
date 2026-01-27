@@ -16,7 +16,11 @@ find_package(absl CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 
 add_executable(bridge_generator
+    #enter point
+    
     Private/ProtobufGenerator.cpp
+    
+    # declarations
     Private/CodeBuilder.h
     Private/DependencySorter.h
     Private/GeneratorContext.h
@@ -34,8 +38,26 @@ add_executable(bridge_generator
     Private/Strategies/PrimitiveFieldStrategy.h
     Private/Strategies/StringFieldStrategy.h
     Private/Strategies/UnrealStrategies.h
+    
+    # implementations
+    Private/CodeBuilder.cpp
+    Private/DependencySorter.cpp
+    Private/GeneratorContext.cpp
+    Private/TypeRegistry.cpp
+    Private/UECodeGenerator.cpp
+    Private/Generators/EnumGenerator.cpp
+    Private/Generators/MessageGenerator.cpp
+    Private/Generators/OneOfGenerator.cpp
+    Private/Generators/ProtoLibraryGenerator.cpp
+    Private/Strategies/EnumFieldStrategy.cpp
+    Private/Strategies/FieldStrategy.cpp
+    Private/Strategies/FieldStrategyFactory.cpp
+    Private/Strategies/MapFieldStrategy.cpp
+    Private/Strategies/MessageFieldStrategy.cpp
+    Private/Strategies/PrimitiveFieldStrategy.cpp
+    Private/Strategies/StringFieldStrategy.cpp
+    Private/Strategies/UnrealStrategies.cpp    
 )
-
 target_include_directories(bridge_generator PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Private
 )
