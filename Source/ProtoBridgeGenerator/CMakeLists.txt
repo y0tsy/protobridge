@@ -10,7 +10,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-    target_compile_options(bridge_generator PRIVATE /EHsc)
 endif()
 
 find_package(absl CONFIG REQUIRED)
@@ -62,6 +61,10 @@ add_executable(bridge_generator
 target_include_directories(bridge_generator PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Private
 )
+
+if(MSVC)
+        target_compile_options(bridge_generator PRIVATE /EHsc)
+endif()
 
 target_link_libraries(bridge_generator PRIVATE
     protobuf::libprotoc
