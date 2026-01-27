@@ -9,6 +9,7 @@
 #endif
 
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 
 #ifdef _MSC_VER
 #pragma warning(pop)
