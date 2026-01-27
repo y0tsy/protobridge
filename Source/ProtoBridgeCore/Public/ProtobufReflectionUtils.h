@@ -7,6 +7,7 @@
 #include "UObject/SoftObjectPath.h"
 #include "ProtobufStringUtils.h"
 #include "ProtoBridgeTypes.h"
+#include "ProtoBridgeCoreModule.h"
 
 namespace google {
 namespace protobuf {
@@ -52,9 +53,24 @@ public:
 	static void FGameplayTagToProto(const FGameplayTag& InTag, T_Proto* OutProto) { 
 		if(OutProto) FProtobufStringUtils::FNameToStdString(InTag.GetTagName(), *OutProto->mutable_tag_name()); 
 	}
+
 	template <typename T_Proto>
 	static FGameplayTag ProtoToFGameplayTag(const T_Proto& InProto) { 
-		return FGameplayTag::RequestGameplayTag(FProtobufStringUtils::StdStringToFName(InProto.tag_name()), false); 
+		const FName TagName = FProtobufStringUtils::StdStringToFName(InProto.tag_name());
+
+		if (TagName.IsNone())
+		{
+			return FGameplayTag();
+		}
+
+		FGameplayTag Result = FGameplayTag::RequestGameplayTag(TagName, false);
+		
+		if (!Result.IsValid())
+		{
+			UE_LOG(LogProtoBridgeCore, Warning, TEXT("ProtoToFGameplayTag: Tag '%s' not found in project registry."), *TagName.ToString());
+		}
+
+		return Result; 
 	}
 
 	template <typename T_Proto>
@@ -68,10 +84,18 @@ public:
 		FGameplayTagContainer Result;
 		for (const std::string& TagStr : InProto.gameplay_tags()) 
 		{
-			FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FProtobufStringUtils::StdStringToFName(TagStr), false);
-			if (Tag.IsValid())
+			const FName TagName = FProtobufStringUtils::StdStringToFName(TagStr);
+			if (!TagName.IsNone())
 			{
-				Result.AddTag(Tag);
+				FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TagName, false);
+				if (Tag.IsValid())
+				{
+					Result.AddTag(Tag);
+				}
+				else
+				{
+					UE_LOG(LogProtoBridgeCore, Warning, TEXT("ProtoToFGameplayTagContainer: Tag '%s' not found."), *TagName.ToString());
+				}
 			}
 		}
 		return Result;
