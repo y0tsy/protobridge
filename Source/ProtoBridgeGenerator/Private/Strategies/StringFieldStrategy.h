@@ -1,53 +1,19 @@
 #pragma once
-
 #include "FieldStrategy.h"
 
 class FStringFieldStrategy : public IFieldStrategy
 {
 public:
-    FStringFieldStrategy(const FieldDescriptor* InField) : Field(InField) {}
+    FStringFieldStrategy(const google::protobuf::FieldDescriptor* InField);
 
-    virtual const FieldDescriptor* GetField() const override { return Field; }
-    virtual bool IsRepeated() const override { return Field->is_repeated(); }
-
-    virtual std::string GetCppType() const override
-    {
-        return (Field->type() == FieldDescriptor::TYPE_BYTES) ? "TArray<uint8>" : "FString";
-    }
+    virtual const google::protobuf::FieldDescriptor* GetField() const override;
+    virtual bool IsRepeated() const override;
+    virtual std::string GetCppType() const override;
 
 protected:
-    virtual void WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const override
-    {
-        if (Field->type() == FieldDescriptor::TYPE_BYTES)
-        {
-            std::string Target = Field->is_repeated() ? ProtoTarget + "()" : "OutProto.mutable_" + std::string(Field->name()) + "()";
-            Ctx.Writer.Print("FProtobufStringUtils::ByteArrayToStdString($val$, *$target$);\n", "val", UeVal, "target", Target);
-        }
-        else
-        {
-            if (Field->is_repeated())
-            {
-                Ctx.Writer.Print("*$target$() = FProtobufStringUtils::FStringToStdString($val$);\n", "target", ProtoTarget, "val", UeVal);
-            }
-            else
-            {
-                Ctx.Writer.Print("$target$(FProtobufStringUtils::FStringToStdString($val$));\n", "target", ProtoTarget, "val", UeVal);
-            }
-        }
-    }
-
-    virtual void WriteInnerFromProto(FGeneratorContext& Ctx, const std::string& UeTarget, const std::string& ProtoVal) const override
-    {
-        if (Field->type() == FieldDescriptor::TYPE_BYTES)
-        {
-            Ctx.Writer.Print("FProtobufStringUtils::StdStringToByteArray($val$, $target$);\n", "val", ProtoVal, "target", UeTarget);
-        }
-        else
-        {
-            Ctx.Writer.Print("$target$ = FProtobufStringUtils::StdStringToFString($val$);\n", "target", UeTarget, "val", ProtoVal);
-        }
-    }
+    virtual void WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const override;
+    virtual void WriteInnerFromProto(FGeneratorContext& Ctx, const std::string& UeTarget, const std::string& ProtoVal) const override;
 
 private:
-    const FieldDescriptor* Field;
+    const google::protobuf::FieldDescriptor* Field;
 };

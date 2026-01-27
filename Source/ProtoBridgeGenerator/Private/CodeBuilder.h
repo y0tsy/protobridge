@@ -1,67 +1,43 @@
 #pragma once
 
 #include <string>
-#include <vector>
-#include <map>
 
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4800 4125 4668 4541 4946)
-#endif
-
-#include <google/protobuf/io/printer.h>
-
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-
-using namespace google::protobuf::io;
+namespace google {
+	namespace protobuf {
+		namespace io {
+			class Printer;
+		}
+	}
+}
 
 class FCodeWriter
 {
 public:
-	explicit FCodeWriter(Printer* InPrinter) : P(InPrinter) {}
+	explicit FCodeWriter(google::protobuf::io::Printer* InPrinter);
 
+	void Print(const char* Text);
+	
 	template<typename... Args>
-	void Print(const char* Format, Args&&... args)
-	{
-		P->Print(Format, std::forward<Args>(args)...);
-	}
+	void Print(const char* Format, Args&&... args);
 
-	void Print(const char* Text)
-	{
-		P->Print(Text);
-	}
-
-	void Indent() { P->Indent(); }
-	void Outdent() { P->Outdent(); }
+	void Indent();
+	void Outdent();
 
 private:
-	Printer* P;
+	google::protobuf::io::Printer* P;
 };
+
+template<typename... Args>
+void FCodeWriter::Print(const char* Format, Args&&... args)
+{
+	PrintImpl(Format, std::forward<Args>(args)...);
+}
 
 class FScopedBlock
 {
 public:
-	FScopedBlock(FCodeWriter& InWriter, const std::string& Header = "", const std::string& Suffix = "}")
-		: Writer(InWriter)
-		, EndSuffix(Suffix)
-	{
-		if (!Header.empty())
-		{
-			Writer.Print(Header.c_str());
-			Writer.Print("\n");
-		}
-		Writer.Print("{\n");
-		Writer.Indent();
-	}
-
-	virtual ~FScopedBlock()
-	{
-		Writer.Outdent();
-		Writer.Print(EndSuffix.c_str());
-		Writer.Print("\n\n");
-	}
+	FScopedBlock(FCodeWriter& InWriter, const std::string& Header = "", const std::string& Suffix = "}");
+	virtual ~FScopedBlock();
 
 	FScopedBlock(const FScopedBlock&) = delete;
 	FScopedBlock& operator=(const FScopedBlock&) = delete;
@@ -74,26 +50,17 @@ private:
 class FScopedClass : public FScopedBlock
 {
 public:
-	FScopedClass(FCodeWriter& InWriter, const std::string& Header)
-		: FScopedBlock(InWriter, Header, "};")
-	{
-	}
+	FScopedClass(FCodeWriter& InWriter, const std::string& Header);
 };
 
 class FScopedSwitch : public FScopedBlock
 {
 public:
-	FScopedSwitch(FCodeWriter& InWriter, const std::string& Condition)
-		: FScopedBlock(InWriter, "switch (" + Condition + ")", "}")
-	{
-	}
+	FScopedSwitch(FCodeWriter& InWriter, const std::string& Condition);
 };
 
 class FScopedNamespace : public FScopedBlock
 {
 public:
-	FScopedNamespace(FCodeWriter& InWriter, const std::string& Name)
-		: FScopedBlock(InWriter, "namespace " + Name, "}")
-	{
-	}
+	FScopedNamespace(FCodeWriter& InWriter, const std::string& Name);
 };

@@ -15,12 +15,12 @@ int main(int argc, char* argv[])
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "[UEGen] CRITICAL ERROR: " << e.what() << std::endl;
+		std::cerr << "[BridgeGenerator] CRITICAL ERROR: " << e.what() << std::endl;
 		return 1;
 	}
 	catch (...)
 	{
-		std::cerr << "[UEGen] UNKNOWN CRITICAL ERROR" << std::endl;
+		std::cerr << "[BridgeGenerator] UNKNOWN CRITICAL ERROR" << std::endl;
 		return 1;
 	}
 }
