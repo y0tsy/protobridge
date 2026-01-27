@@ -7,6 +7,7 @@
 #endif
 
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -20,6 +21,42 @@ bool FStringFieldStrategy::IsRepeated() const { return Field->is_repeated(); }
 std::string FStringFieldStrategy::GetCppType() const
 {
 	return (Field->type() == google::protobuf::FieldDescriptor::TYPE_BYTES) ? "TArray<uint8>" : "FString";
+}
+
+void FStringFieldStrategy::WriteToProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+{
+	if (IsRepeated() && Field->type() == google::protobuf::FieldDescriptor::TYPE_STRING)
+	{
+		Ctx.Writer.Print("FProtobufContainerUtils::TArrayToRepeatedPtrField($ue$, OutProto.mutable_$proto$());\n", 
+			"ue", UeVar, "proto", ProtoVar);
+	}
+	else if (IsRepeated())
+	{
+		FScopedBlock Loop(Ctx.Writer, "for (const auto& Val : " + UeVar + ")");
+		WriteInnerToProto(Ctx, "Val", "OutProto.add_" + ProtoVar);
+	}
+	else
+	{
+		WriteInnerToProto(Ctx, UeVar, "OutProto.set_" + ProtoVar);
+	}
+}
+
+void FStringFieldStrategy::WriteFromProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+{
+	if (IsRepeated() && Field->type() == google::protobuf::FieldDescriptor::TYPE_STRING)
+	{
+		Ctx.Writer.Print("FProtobufContainerUtils::RepeatedPtrFieldToTArray(InProto.$proto$(), $ue$);\n", 
+			"proto", ProtoVar, "ue", UeVar);
+	}
+	else if (IsRepeated())
+	{
+		FScopedBlock Loop(Ctx.Writer, "for (const auto& Val : InProto." + ProtoVar + "())");
+		WriteInnerFromProto(Ctx, UeVar + ".AddDefaulted_GetRef()", "Val");
+	}
+	else
+	{
+		WriteInnerFromProto(Ctx, UeVar, "InProto." + ProtoVar + "()");
+	}
 }
 
 void FStringFieldStrategy::WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const

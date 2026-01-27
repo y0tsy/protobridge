@@ -7,6 +7,7 @@
 #endif
 
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -21,6 +22,32 @@ std::string FEnumFieldStrategy::GetCppType() const
 {
 	FGeneratorContext Ctx(nullptr, ""); 
 	return Ctx.GetSafeUeName(std::string(Field->enum_type()->full_name()), 'E');
+}
+
+void FEnumFieldStrategy::WriteToProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+{
+	if (IsRepeated())
+	{
+		Ctx.Writer.Print("FProtobufContainerUtils::TArrayToRepeatedField($ue$, OutProto.mutable_$proto$());\n", 
+			"ue", UeVar, "proto", ProtoVar);
+	}
+	else
+	{
+		WriteInnerToProto(Ctx, UeVar, "OutProto.set_" + ProtoVar);
+	}
+}
+
+void FEnumFieldStrategy::WriteFromProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+{
+	if (IsRepeated())
+	{
+		Ctx.Writer.Print("FProtobufContainerUtils::RepeatedFieldToTArray(InProto.$proto$(), $ue$);\n", 
+			"proto", ProtoVar, "ue", UeVar);
+	}
+	else
+	{
+		WriteInnerFromProto(Ctx, UeVar, "InProto." + ProtoVar + "()");
+	}
 }
 
 void FEnumFieldStrategy::WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const

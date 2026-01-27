@@ -7,6 +7,7 @@
 #endif
 
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -35,6 +36,32 @@ std::string FPrimitiveFieldStrategy::GetCppType() const
 	case google::protobuf::FieldDescriptor::TYPE_SINT32: return "int32";
 	case google::protobuf::FieldDescriptor::TYPE_SINT64: return "int64";
 	default: return "int32";
+	}
+}
+
+void FPrimitiveFieldStrategy::WriteToProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+{
+	if (IsRepeated())
+	{
+		Ctx.Writer.Print("FProtobufContainerUtils::TArrayToRepeatedField($ue$, OutProto.mutable_$proto$());\n", 
+			"ue", UeVar, "proto", ProtoVar);
+	}
+	else
+	{
+		WriteInnerToProto(Ctx, UeVar, "OutProto.set_" + ProtoVar);
+	}
+}
+
+void FPrimitiveFieldStrategy::WriteFromProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+{
+	if (IsRepeated())
+	{
+		Ctx.Writer.Print("FProtobufContainerUtils::RepeatedFieldToTArray(InProto.$proto$(), $ue$);\n", 
+			"proto", ProtoVar, "ue", UeVar);
+	}
+	else
+	{
+		WriteInnerFromProto(Ctx, UeVar, "InProto." + ProtoVar + "()");
 	}
 }
 

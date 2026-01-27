@@ -8,6 +8,7 @@
 #endif
 
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -51,6 +52,16 @@ std::string FMapFieldStrategy::GetCppType() const
 
 void FMapFieldStrategy::WriteToProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
 {
+	bool bKeyIsPrimitive = KeyField->type() != google::protobuf::FieldDescriptor::TYPE_MESSAGE;
+	bool bValueIsPrimitive = ValueField->type() != google::protobuf::FieldDescriptor::TYPE_MESSAGE;
+
+	if (bKeyIsPrimitive && bValueIsPrimitive)
+	{
+		Ctx.Writer.Print("FProtobufContainerUtils::TMapToProtoMap($ue$, OutProto.mutable_$proto$());\n", 
+			"ue", UeVar, "proto", ProtoVar);
+		return;
+	}
+
 	FScopedBlock Loop(Ctx.Writer, "for (const auto& Elem : " + UeVar + ")");
 
 	std::string KeyStr = "Elem.Key";
@@ -95,6 +106,16 @@ void FMapFieldStrategy::WriteToProto(FGeneratorContext& Ctx, const std::string& 
 
 void FMapFieldStrategy::WriteFromProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
 {
+	bool bKeyIsPrimitive = KeyField->type() != google::protobuf::FieldDescriptor::TYPE_MESSAGE;
+	bool bValueIsPrimitive = ValueField->type() != google::protobuf::FieldDescriptor::TYPE_MESSAGE;
+
+	if (bKeyIsPrimitive && bValueIsPrimitive)
+	{
+		Ctx.Writer.Print("FProtobufContainerUtils::ProtoMapToTMap(InProto.$proto$(), $ue$);\n", 
+			"proto", ProtoVar, "ue", UeVar);
+		return;
+	}
+
 	FScopedBlock Loop(Ctx.Writer, "for (const auto& Elem : InProto." + ProtoVar + "())");
 
 	std::string KeyStr = "Elem.first";
