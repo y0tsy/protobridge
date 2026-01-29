@@ -2,12 +2,14 @@
 #include "ProtoBridgeEncoderRegistry.h"
 #include "ProtobufStringUtils.h"
 #include "ProtobufIncludes.h"
+#include "ProtoBridgeCoreSettings.h"
 
 void UProtoBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
-	Int64Strategy = EProtobufInt64Strategy::AlwaysString;
+	const UProtoBridgeCoreSettings* Settings = GetDefault<UProtoBridgeCoreSettings>();
+	Int64Strategy = Settings->Int64SerializationStrategy;
 	
 	{
 		FWriteScopeLock Lock(StateLock);

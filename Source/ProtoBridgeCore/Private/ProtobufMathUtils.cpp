@@ -6,6 +6,7 @@ bool FProtobufMathUtils::FDateTimeToTimestamp(const FDateTime& InDateTime, googl
 {
 	static const FDateTime MinDate(1, 1, 1);
 	static const FDateTime MaxDate(9999, 12, 31, 23, 59, 59, 999);
+	static const int64 UnixEpochTicks = 621355968000000000;
 
 	if (InDateTime < MinDate || InDateTime > MaxDate)
 	{
@@ -16,17 +17,24 @@ bool FProtobufMathUtils::FDateTimeToTimestamp(const FDateTime& InDateTime, googl
 	if (ClampedDate < MinDate) ClampedDate = MinDate;
 	if (ClampedDate > MaxDate) ClampedDate = MaxDate;
 
-	const int64 AllTicks = ClampedDate.GetTicks();
+	const int64 UETicks = ClampedDate.GetTicks();
+	const int64 UnixTicks = UETicks - UnixEpochTicks;
+	
 	const int64 TicksPerSec = ETimespan::TicksPerSecond;
-	OutTimestamp.set_seconds(AllTicks / TicksPerSec);
-	OutTimestamp.set_nanos(static_cast<int32>((AllTicks % TicksPerSec) * 100));
+	OutTimestamp.set_seconds(UnixTicks / TicksPerSec);
+	OutTimestamp.set_nanos(static_cast<int32>((UnixTicks % TicksPerSec) * 100));
 	
 	return true;
 }
 
 FDateTime FProtobufMathUtils::TimestampToFDateTime(const google::protobuf::Timestamp& InTimestamp)
 {
-	return FDateTime(InTimestamp.seconds() * ETimespan::TicksPerSecond + InTimestamp.nanos() / 100);
+	static const int64 UnixEpochTicks = 621355968000000000;
+	
+	const int64 TicksFromSecs = InTimestamp.seconds() * ETimespan::TicksPerSecond;
+	const int64 TicksFromNanos = InTimestamp.nanos() / 100;
+	
+	return FDateTime(UnixEpochTicks + TicksFromSecs + TicksFromNanos);
 }
 
 void FProtobufMathUtils::FTimespanToDuration(const FTimespan& InTimespan, google::protobuf::Duration& OutDuration)

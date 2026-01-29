@@ -1,6 +1,7 @@
 ﻿#include "ProtobufReflectionUtils.h"
 #include "ProtobufIncludes.h"
 #include "ProtoBridgeCoreModule.h"
+#include "ProtoBridgeCoreSettings.h"
 
 bool FProtobufReflectionUtils::FVariantToProtoValue(const FVariant& InVariant, google::protobuf::Value& OutValue, const FProtoSerializationContext& Context)
 {
@@ -85,12 +86,12 @@ void FProtobufReflectionUtils::AnyToProto(const FProtobufAny& InAny, google::pro
 
 bool FProtobufReflectionUtils::ProtoToAny(const google::protobuf::Any& InAny, FProtobufAny& OutAny)
 {
-	constexpr int32 MAX_ANY_SIZE = 32 * 1024 * 1024;
+	const int32 MaxSize = GetDefault<UProtoBridgeCoreSettings>()->MaxAnyPayloadSize;
 	
 	const std::string& Val = InAny.value();
-	if (Val.size() > MAX_ANY_SIZE)
+	if (Val.size() > static_cast<size_t>(MaxSize))
 	{
-		UE_LOG(LogProtoBridgeCore, Error, TEXT("ProtoToAny: Payload size %llu exceeds limit of %d"), (uint64)Val.size(), MAX_ANY_SIZE);
+		UE_LOG(LogProtoBridgeCore, Error, TEXT("ProtoToAny: Payload size %llu exceeds limit of %d"), (uint64)Val.size(), MaxSize);
 		return false;
 	}
 

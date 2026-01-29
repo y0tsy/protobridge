@@ -3,6 +3,7 @@
 #include "ProtobufIncludes.h"
 #include "ProtobufReflectionUtils.h"
 #include "ProtoBridgeCoreModule.h"
+#include "ProtoBridgeCoreSettings.h"
 #include <cmath>
 
 TSharedPtr<FJsonObject> FProtobufStructUtils::ProtoStructToJsonObject(const google::protobuf::Struct& InStruct, const FProtoSerializationContext& Context)
@@ -51,7 +52,8 @@ TArray<TSharedPtr<FJsonValue>> FProtobufStructUtils::ProtoToJsonList(const googl
 
 TSharedPtr<FJsonObject> FProtobufStructUtils::ProtoStructToJsonObjectInternal(const google::protobuf::Struct& InStruct, int32 CurrentDepth, const FProtoSerializationContext& Context)
 {
-	if (CurrentDepth >= MAX_RECURSION_DEPTH)
+	const int32 MaxDepth = GetDefault<UProtoBridgeCoreSettings>()->MaxJsonRecursionDepth;
+	if (CurrentDepth >= MaxDepth)
 	{
 		UE_LOG(LogProtoBridgeCore, Error, TEXT("Recursion depth exceeded in ProtoStructToJsonObjectInternal"));
 		return nullptr;
@@ -75,7 +77,8 @@ TSharedPtr<FJsonObject> FProtobufStructUtils::ProtoStructToJsonObjectInternal(co
 
 bool FProtobufStructUtils::JsonObjectToProtoStructInternal(const TSharedPtr<FJsonObject>& InJson, google::protobuf::Struct& OutStruct, int32 CurrentDepth, const FProtoSerializationContext& Context)
 {
-	if (CurrentDepth >= MAX_RECURSION_DEPTH)
+	const int32 MaxDepth = GetDefault<UProtoBridgeCoreSettings>()->MaxJsonRecursionDepth;
+	if (CurrentDepth >= MaxDepth)
 	{
 		UE_LOG(LogProtoBridgeCore, Error, TEXT("Recursion depth exceeded in JsonObjectToProtoStructInternal"));
 		return false;
@@ -109,7 +112,8 @@ bool FProtobufStructUtils::JsonObjectToProtoStructInternal(const TSharedPtr<FJso
 
 TSharedPtr<FJsonValue> FProtobufStructUtils::ProtoValueToJsonValueInternal(const google::protobuf::Value& InValue, int32 CurrentDepth, const FProtoSerializationContext& Context)
 {
-	if (CurrentDepth >= MAX_RECURSION_DEPTH)
+	const int32 MaxDepth = GetDefault<UProtoBridgeCoreSettings>()->MaxJsonRecursionDepth;
+	if (CurrentDepth >= MaxDepth)
 	{
 		return nullptr;
 	}
@@ -158,7 +162,8 @@ TSharedPtr<FJsonValue> FProtobufStructUtils::ProtoValueToJsonValueInternal(const
 
 bool FProtobufStructUtils::JsonValueToProtoValueInternal(const TSharedPtr<FJsonValue>& InJson, google::protobuf::Value& OutValue, int32 CurrentDepth, const FProtoSerializationContext& Context)
 {
-	if (CurrentDepth >= MAX_RECURSION_DEPTH)
+	const int32 MaxDepth = GetDefault<UProtoBridgeCoreSettings>()->MaxJsonRecursionDepth;
+	if (CurrentDepth >= MaxDepth)
 	{
 		return false;
 	}

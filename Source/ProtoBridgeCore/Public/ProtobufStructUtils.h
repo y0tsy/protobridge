@@ -31,6 +31,4 @@ private:
 
 	static TSharedPtr<FJsonValue> ProtoValueToJsonValueInternal(const google::protobuf::Value& InValue, int32 CurrentDepth, const FProtoSerializationContext& Context);
 	static bool JsonValueToProtoValueInternal(const TSharedPtr<FJsonValue>& InJson, google::protobuf::Value& OutValue, int32 CurrentDepth, const FProtoSerializationContext& Context);
-
-	static const int32 MAX_RECURSION_DEPTH = 75;
 };

@@ -2,8 +2,7 @@
 #include "Containers/StringConv.h"
 #include "Misc/StringBuilder.h"
 #include "ProtoBridgeCoreModule.h"
-
-static constexpr int32 MAX_BYTE_ARRAY_SIZE = 64 * 1024 * 1024;
+#include "ProtoBridgeCoreSettings.h"
 
 void FProtobufStringUtils::FStringToStdString(FStringView InStr, std::string& OutStr)
 {
@@ -205,9 +204,11 @@ void FProtobufStringUtils::ByteArrayToStdString(const TArray<uint8>& InBytes, st
 
 bool FProtobufStringUtils::StdStringToByteArray(const std::string& InStr, TArray<uint8>& OutBytes)
 {
-	if (InStr.size() > MAX_BYTE_ARRAY_SIZE)
+	const int32 MaxSize = GetDefault<UProtoBridgeCoreSettings>()->MaxByteArraySize;
+	
+	if (InStr.size() > static_cast<size_t>(MaxSize))
 	{
-		UE_LOG(LogProtoBridgeCore, Error, TEXT("StdStringToByteArray: Input size %llu exceeds limit of %d bytes"), (uint64)InStr.size(), MAX_BYTE_ARRAY_SIZE);
+		UE_LOG(LogProtoBridgeCore, Error, TEXT("StdStringToByteArray: Input size %llu exceeds limit of %d bytes"), (uint64)InStr.size(), MaxSize);
 		OutBytes.Reset();
 		return false;
 	}
