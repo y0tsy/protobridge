@@ -118,15 +118,47 @@ FUnrealJsonStrategy::FUnrealJsonStrategy(const google::protobuf::FieldDescriptor
 
 const google::protobuf::FieldDescriptor* FUnrealJsonStrategy::GetField() const { return Field; }
 bool FUnrealJsonStrategy::IsRepeated() const { return Field->is_repeated(); }
-std::string FUnrealJsonStrategy::GetCppType() const { return "FString"; } 
-bool FUnrealJsonStrategy::CanBeUProperty() const { return true; }
+
+std::string FUnrealJsonStrategy::GetCppType() const 
+{ 
+	std::string FullName = std::string(Field->message_type()->full_name());
+	if (FullName == "google.protobuf.Struct") return "TSharedPtr<FJsonObject>";
+	if (FullName == "google.protobuf.ListValue") return "TArray<TSharedPtr<FJsonValue>>";
+	return "TSharedPtr<FJsonValue>"; 
+}
+
+bool FUnrealJsonStrategy::CanBeUProperty() const { return false; }
 
 void FUnrealJsonStrategy::WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const
 {
-	Ctx.Writer.Print("// JSON strategy not fully implemented for raw string conversion without parsing\n");
+	std::string FullName = std::string(Field->message_type()->full_name());
+	std::string FuncName;
+	
+	if (FullName == "google.protobuf.Struct") FuncName = "FProtobufStructUtils::JsonObjectToProtoStruct";
+	else if (FullName == "google.protobuf.ListValue") FuncName = "FProtobufStructUtils::JsonListToProto";
+	else FuncName = "FProtobufStructUtils::JsonValueToProtoValue";
+
+	Ctx.Writer.Print("{\n");
+	Ctx.Writer.Indent();
+	Ctx.Writer.Print("FProtoSerializationContext Ctx;\n");
+	Ctx.Writer.Print("$func$($val$, *$target$, Ctx);\n", "func", FuncName, "val", UeVal, "target", ProtoTarget);
+	Ctx.Writer.Outdent();
+	Ctx.Writer.Print("}\n");
 }
 
 void FUnrealJsonStrategy::WriteInnerFromProto(FGeneratorContext& Ctx, const std::string& UeTarget, const std::string& ProtoVal) const
 {
-	Ctx.Writer.Print("// JSON strategy not fully implemented\n");
+	std::string FullName = std::string(Field->message_type()->full_name());
+	std::string FuncName;
+	
+	if (FullName == "google.protobuf.Struct") FuncName = "FProtobufStructUtils::ProtoStructToJsonObject";
+	else if (FullName == "google.protobuf.ListValue") FuncName = "FProtobufStructUtils::ProtoToJsonList";
+	else FuncName = "FProtobufStructUtils::ProtoValueToJsonValue";
+
+	Ctx.Writer.Print("{\n");
+	Ctx.Writer.Indent();
+	Ctx.Writer.Print("FProtoSerializationContext Ctx;\n");
+	Ctx.Writer.Print("$target$ = $func$($val$, Ctx);\n", "target", UeTarget, "func", FuncName, "val", ProtoVal);
+	Ctx.Writer.Outdent();
+	Ctx.Writer.Print("}\n");
 }
