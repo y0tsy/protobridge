@@ -1,6 +1,6 @@
 ﻿#include "UECodeGenerator.h"
 #include "GeneratorContext.h"
-#include "Utils/DependencySorter.h"
+#include "DependencySorter.h"
 #include "Config/UEDefinitions.h"
 #include "Strategies/StrategyPool.h"
 #include "Generators/EnumGenerator.h"
