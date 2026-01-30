@@ -6,7 +6,9 @@
 
 namespace google {
 	namespace protobuf {
-		class io;
+		namespace io {
+			class Printer;
+		}
 	}
 }
 

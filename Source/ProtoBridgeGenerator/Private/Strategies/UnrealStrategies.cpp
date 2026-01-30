@@ -16,7 +16,7 @@
 
 bool FUnrealStructStrategy::IsRepeated(const google::protobuf::FieldDescriptor* Field) const { return Field->is_repeated(); }
 
-std::string FUnrealStructStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const 
+std::string FUnrealStructStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const 
 { 
 	const FUnrealTypeInfo* Info = FTypeRegistry::GetInfo(std::string(Field->message_type()->full_name()));
 	return Info ? Info->UeTypeName : "FUnknown"; 
@@ -33,7 +33,7 @@ void FUnrealStructStrategy::WriteRepeatedToProto(FGeneratorContext& Ctx, const g
 	const FUnrealTypeInfo* Info = FTypeRegistry::GetInfo(std::string(Field->message_type()->full_name()));
 	if (!Info) return;
 
-	std::string UeType = GetCppType(Field);
+	std::string UeType = GetCppType(Field, Ctx);
 	std::string ProtoType = Ctx.NameResolver.GetProtoCppType(Field->message_type());
 	
 	std::string FuncName = Info->UtilityClass + "::" + Info->UtilsFuncPrefix + "ToProto";
@@ -88,7 +88,7 @@ void FUnrealStructStrategy::WriteSingleValueFromProto(FGeneratorContext& Ctx, co
 
 bool FUnrealJsonStrategy::IsRepeated(const google::protobuf::FieldDescriptor* Field) const { return Field->is_repeated(); }
 
-std::string FUnrealJsonStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const 
+std::string FUnrealJsonStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const 
 { 
 	std::string FullName = std::string(Field->message_type()->full_name());
 	namespace Types = UE::Names::Types;

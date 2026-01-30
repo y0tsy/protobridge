@@ -16,7 +16,7 @@ class IFieldStrategy
 public:
 	virtual ~IFieldStrategy() = default;
 
-	virtual std::string GetCppType(const google::protobuf::FieldDescriptor* Field) const = 0;
+	virtual std::string GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const = 0;
 	virtual bool IsRepeated(const google::protobuf::FieldDescriptor* Field) const;
 	virtual bool CanBeUProperty(const google::protobuf::FieldDescriptor* Field) const;
 

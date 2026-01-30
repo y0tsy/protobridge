@@ -5,7 +5,7 @@ class FPrimitiveFieldStrategy : public IFieldStrategy
 {
 public:
     virtual bool IsRepeated(const google::protobuf::FieldDescriptor* Field) const override;
-    virtual std::string GetCppType(const google::protobuf::FieldDescriptor* Field) const override;
+    virtual std::string GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const override;
 
 protected:
     virtual void WriteRepeatedToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const override;

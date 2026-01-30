@@ -15,7 +15,7 @@
 
 bool FPrimitiveFieldStrategy::IsRepeated(const google::protobuf::FieldDescriptor* Field) const { return Field->is_repeated(); }
 
-std::string FPrimitiveFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const
+std::string FPrimitiveFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const
 {
 	namespace Types = UE::Names::Types;
 	switch (Field->type())

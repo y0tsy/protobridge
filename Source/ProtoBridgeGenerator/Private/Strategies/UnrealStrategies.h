@@ -5,7 +5,7 @@ class FUnrealStructStrategy : public IFieldStrategy
 {
 public:
 	virtual bool IsRepeated(const google::protobuf::FieldDescriptor* Field) const override;
-	virtual std::string GetCppType(const google::protobuf::FieldDescriptor* Field) const override;
+	virtual std::string GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const override;
 	virtual bool CanBeUProperty(const google::protobuf::FieldDescriptor* Field) const override;
 
 protected:
@@ -20,7 +20,7 @@ class FUnrealJsonStrategy : public IFieldStrategy
 {
 public:
 	virtual bool IsRepeated(const google::protobuf::FieldDescriptor* Field) const override;
-	virtual std::string GetCppType(const google::protobuf::FieldDescriptor* Field) const override;
+	virtual std::string GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const override;
 	virtual bool CanBeUProperty(const google::protobuf::FieldDescriptor* Field) const override;
 
 protected:

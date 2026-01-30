@@ -30,15 +30,13 @@ bool FMapFieldStrategy::CanBeUProperty(const google::protobuf::FieldDescriptor* 
 	return true;
 }
 
-std::string FMapFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const
+std::string FMapFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const
 {
 	const google::protobuf::FieldDescriptor* KeyField = Field->message_type()->field(0);
 	const google::protobuf::FieldDescriptor* ValueField = Field->message_type()->field(1);
 	
-	FNameResolver Resolver; 
-
-	std::string KeyType = GetUeTypeName(KeyField, FGeneratorContext(nullptr, "")); 
-	std::string ValueType = GetUeTypeName(ValueField, FGeneratorContext(nullptr, ""));
+	std::string KeyType = GetUeTypeName(KeyField, Ctx); 
+	std::string ValueType = GetUeTypeName(ValueField, Ctx);
 	
 	return std::string(UE::Names::Types::TMap) + "<" + KeyType + ", " + ValueType + ">";
 }

@@ -38,7 +38,7 @@ void IFieldStrategy::WriteDeclaration(FGeneratorContext& Ctx, const google::prot
 		WritePropertyMacro(Ctx, Field, GetUESpecifiers(Loc));
 	}
 	
-	std::string TypeName = GetCppType(Field);
+	std::string TypeName = GetCppType(Field, Ctx);
 	if (IsRepeated(Field)) 
 	{
 		TypeName = std::string(UE::Names::Types::TArray) + "<" + TypeName + ">";

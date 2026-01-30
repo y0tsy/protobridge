@@ -1,12 +1,5 @@
 ﻿#include "EnumFieldStrategy.h"
 #include "../GeneratorContext.h"
-
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4800 4125 4668 4541 4946)
-#endif
-#include "EnumFieldStrategy.h"
-#include "../GeneratorContext.h"
 #include "../Config/UEDefinitions.h"
 
 #ifdef _MSC_VER
@@ -22,7 +15,7 @@
 
 bool FEnumFieldStrategy::IsRepeated(const google::protobuf::FieldDescriptor* Field) const { return Field->is_repeated(); }
 
-std::string FEnumFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const
+std::string FEnumFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const
 {
 	return Ctx.NameResolver.GetSafeUeName(std::string(Field->enum_type()->full_name()), 'E');
 }
@@ -57,6 +50,6 @@ void FEnumFieldStrategy::WriteSingleValueToProto(FGeneratorContext& Ctx, const g
 
 void FEnumFieldStrategy::WriteSingleValueFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeTarget, const std::string& ProtoValue) const
 {
-	std::string UeType = GetCppType(Field);
+	std::string UeType = GetCppType(Field, Ctx);
 	Ctx.Printer.Print("$target$ = static_cast<$type$>($val$);\n", "target", UeTarget, "type", UeType, "val", ProtoValue);
 }

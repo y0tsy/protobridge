@@ -15,14 +15,14 @@
 
 bool FMessageFieldStrategy::IsRepeated(const google::protobuf::FieldDescriptor* Field) const { return Field->is_repeated(); }
 
-std::string FMessageFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const
+std::string FMessageFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const
 {
 	return Ctx.NameResolver.GetSafeUeName(std::string(Field->message_type()->full_name()), 'F');
 }
 
 void FMessageFieldStrategy::WriteRepeatedToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const
 {
-	std::string UeType = GetCppType(Field);
+	std::string UeType = GetCppType(Field, Ctx);
 	std::string ProtoType = Ctx.NameResolver.GetProtoCppType(Field->message_type());
 	
 	Ctx.Printer.Print("$utils$::TArrayToRepeatedMessage($ue$, OutProto.mutable_$proto$(), \n", 
@@ -35,7 +35,7 @@ void FMessageFieldStrategy::WriteRepeatedToProto(FGeneratorContext& Ctx, const g
 
 void FMessageFieldStrategy::WriteRepeatedFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const
 {
-	std::string UeType = GetCppType(Field);
+	std::string UeType = GetCppType(Field, Ctx);
 	std::string ProtoType = Ctx.NameResolver.GetProtoCppType(Field->message_type());
 
 	Ctx.Printer.Print("$utils$::RepeatedMessageToTArray(InProto.$proto$(), $ue$, \n", 

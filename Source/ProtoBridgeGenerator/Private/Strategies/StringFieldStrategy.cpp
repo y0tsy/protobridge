@@ -15,7 +15,7 @@
 
 bool FStringFieldStrategy::IsRepeated(const google::protobuf::FieldDescriptor* Field) const { return Field->is_repeated(); }
 
-std::string FStringFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const
+std::string FStringFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field, const FGeneratorContext& Ctx) const
 {
 	return (Field->type() == google::protobuf::FieldDescriptor::TYPE_BYTES) 
 		? std::string(UE::Names::Types::TArray) + "<" + UE::Names::Types::Uint8 + ">" 
