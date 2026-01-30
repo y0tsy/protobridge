@@ -3,6 +3,7 @@
 #include "ProtoBridgeLogs.h"
 #include "ProtoBridgeCoreSettings.h"
 #include <string>
+#include <atomic>
 
 bool FProtobufReflectionUtils::FVariantToProtoValue(const FVariant& InVariant, google::protobuf::Value& OutValue, const FProtoSerializationContext& Context)
 {
@@ -54,11 +55,10 @@ bool FProtobufReflectionUtils::ConvertInt64ToProtoValue(int64 InVal, google::pro
 	{
 		if (InVal > ProtoBridgeConstants::MaxSafeInteger || InVal < ProtoBridgeConstants::MinSafeInteger)
 		{
-			static bool bWarned = false;
-			if (!bWarned)
+			static std::atomic<bool> bWarned{false};
+			if (!bWarned.exchange(true))
 			{
 				UE_LOG(LogProtoBridgeCore, Warning, TEXT("Int64 value %lld exceeds safe double precision. Precision loss will occur. This warning is shown only once."), InVal);
-				bWarned = true;
 			}
 		}
 		OutValue.set_number_value(static_cast<double>(InVal));

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ProtobufStringUtils.h"
+#include "ProtobufIncludes.h"
 #include <type_traits>
 
 namespace google {
@@ -30,6 +31,13 @@ namespace ProtoConversion
 
 class PROTOBRIDGECORE_API FProtobufContainerUtils
 {
+private:
+	template <typename T_UE, typename T_Proto>
+	static constexpr bool bIsBulkCopyable = 
+		std::is_trivially_copyable_v<T_UE> &&
+		(std::is_fundamental_v<T_UE> || std::is_enum_v<T_UE>) &&
+		sizeof(T_UE) == sizeof(T_Proto);
+
 public:
 	template <typename T_UE, typename T_Proto>
 	static void TArrayToRepeatedField(const TArray<T_UE>& InArray, google::protobuf::RepeatedField<T_Proto>* OutField)
@@ -40,7 +48,7 @@ public:
 		if (Num == 0) return;
 		OutField->Reserve(Num);
 		
-		if constexpr (std::is_trivially_copyable_v<T_UE> && sizeof(T_UE) == sizeof(T_Proto) && std::is_same_v<T_UE, T_Proto>)
+		if constexpr (bIsBulkCopyable<T_UE, T_Proto>)
 		{
 			OutField->Resize(Num, static_cast<T_Proto>(0));
 			if (void* Dest = OutField->mutable_data())
@@ -64,7 +72,7 @@ public:
 		OutArray.Reset(Num);
 		if (Num == 0) return;
 		
-		if constexpr (std::is_trivially_copyable_v<T_UE> && sizeof(T_UE) == sizeof(T_Proto) && std::is_same_v<T_UE, T_Proto>)
+		if constexpr (bIsBulkCopyable<T_UE, T_Proto>)
 		{
 			OutArray.SetNumUninitialized(Num);
 			if (const void* Src = InField.data())
