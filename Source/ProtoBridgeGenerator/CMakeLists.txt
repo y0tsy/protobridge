@@ -16,48 +16,54 @@ find_package(absl CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 
 add_executable(bridge_generator
-    #enter point
+    Private/Config/UEDefinitions.h
     
-    Private/ProtobufGenerator.cpp
+    Private/Context/NameResolver.cpp
+    Private/Context/NameResolver.h
+    Private/Context/NameValidator.cpp
+    Private/Context/NameValidator.h
     
-    # declarations
-    Private/CodeBuilder.h
-    Private/DependencySorter.h
-    Private/GeneratorContext.h
-    Private/TypeRegistry.h
-    Private/UECodeGenerator.h
+    Private/Generators/EnumGenerator.cpp
     Private/Generators/EnumGenerator.h
+    Private/Generators/MessageGenerator.cpp
     Private/Generators/MessageGenerator.h
+    Private/Generators/OneOfGenerator.cpp
     Private/Generators/OneOfGenerator.h
+    Private/Generators/ProtoLibraryGenerator.cpp
     Private/Generators/ProtoLibraryGenerator.h
+    
+    Private/Strategies/EnumFieldStrategy.cpp
     Private/Strategies/EnumFieldStrategy.h
+    Private/Strategies/FieldStrategy.cpp
     Private/Strategies/FieldStrategy.h
+    Private/Strategies/FieldStrategyFactory.cpp
     Private/Strategies/FieldStrategyFactory.h
+    Private/Strategies/MapFieldStrategy.cpp
     Private/Strategies/MapFieldStrategy.h
+    Private/Strategies/MessageFieldStrategy.cpp
     Private/Strategies/MessageFieldStrategy.h
+    Private/Strategies/PrimitiveFieldStrategy.cpp
     Private/Strategies/PrimitiveFieldStrategy.h
+    Private/Strategies/StrategyPool.cpp
+    Private/Strategies/StrategyPool.h
+    Private/Strategies/StringFieldStrategy.cpp
     Private/Strategies/StringFieldStrategy.h
+    Private/Strategies/UnrealStrategies.cpp
     Private/Strategies/UnrealStrategies.h
     
-    # implementations
     Private/CodeBuilder.cpp
+    Private/CodeBuilder.h
     Private/DependencySorter.cpp
+    Private/DependencySorter.h
     Private/GeneratorContext.cpp
+    Private/GeneratorContext.h
+    Private/ProtobufGenerator.cpp
     Private/TypeRegistry.cpp
+    Private/TypeRegistry.h
     Private/UECodeGenerator.cpp
-    Private/Generators/EnumGenerator.cpp
-    Private/Generators/MessageGenerator.cpp
-    Private/Generators/OneOfGenerator.cpp
-    Private/Generators/ProtoLibraryGenerator.cpp
-    Private/Strategies/EnumFieldStrategy.cpp
-    Private/Strategies/FieldStrategy.cpp
-    Private/Strategies/FieldStrategyFactory.cpp
-    Private/Strategies/MapFieldStrategy.cpp
-    Private/Strategies/MessageFieldStrategy.cpp
-    Private/Strategies/PrimitiveFieldStrategy.cpp
-    Private/Strategies/StringFieldStrategy.cpp
-    Private/Strategies/UnrealStrategies.cpp    
+    Private/UECodeGenerator.h
 )
+
 target_include_directories(bridge_generator PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Private
 )
