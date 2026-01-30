@@ -144,8 +144,13 @@ void FMapFieldStrategy::WriteFromProto(FGeneratorContext& Ctx, const google::pro
 	}
 }
 
-void FMapFieldStrategy::WriteInnerToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVal, const std::string& ProtoTarget) const {}
-void FMapFieldStrategy::WriteInnerFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeTarget, const std::string& ProtoVal) const {}
+void FMapFieldStrategy::WriteSingleValueToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeValue, const std::string& ProtoName) const
+{
+}
+
+void FMapFieldStrategy::WriteSingleValueFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeTarget, const std::string& ProtoValue) const
+{
+}
 
 std::string FMapFieldStrategy::GetUeTypeName(const google::protobuf::FieldDescriptor* F, const FGeneratorContext& Ctx) const
 {
