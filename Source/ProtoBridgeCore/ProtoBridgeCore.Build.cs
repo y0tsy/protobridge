@@ -15,7 +15,8 @@ public class ProtoBridgeCore : ModuleRules
 		
 		PrivateDependencyModuleNames.AddRange(new string[] { 
 			"CoreUObject", 
-			"Engine" 
+			"Engine",
+			"DeveloperSettings"
 		});
 	}
 }

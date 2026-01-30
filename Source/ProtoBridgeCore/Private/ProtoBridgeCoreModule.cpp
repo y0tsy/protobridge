@@ -1,7 +1,5 @@
 #include "ProtoBridgeCoreModule.h"
 
-DEFINE_LOG_CATEGORY(LogProtoBridgeCore);
-
 void FProtoBridgeCoreModule::StartupModule()
 {
 }

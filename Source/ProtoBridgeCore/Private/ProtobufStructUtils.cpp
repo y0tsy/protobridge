@@ -2,7 +2,7 @@
 #include "ProtobufStringUtils.h"
 #include "ProtobufIncludes.h"
 #include "ProtobufReflectionUtils.h"
-#include "ProtoBridgeCoreModule.h"
+#include "ProtoBridgeLogs.h"
 #include "ProtoBridgeCoreSettings.h"
 #include <cmath>
 
@@ -189,7 +189,10 @@ bool FProtobufStructUtils::JsonValueToProtoValueInternal(const TSharedPtr<FJsonV
 	{
 		const double Val = InJson->AsNumber();
 		
-		if (FMath::IsNearlyZero(FMath::Frac(Val)) && 
+		double IntPart;
+		double FracPart = std::modf(Val, &IntPart);
+
+		if (FMath::IsNearlyZero(FracPart) && 
 			Val >= static_cast<double>(ProtoBridgeConstants::MinSafeInteger) && 
 			Val <= static_cast<double>(ProtoBridgeConstants::MaxSafeInteger))
 		{

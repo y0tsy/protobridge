@@ -1,7 +1,7 @@
 ﻿#include "ProtobufStringUtils.h"
 #include "Containers/StringConv.h"
 #include "Misc/StringBuilder.h"
-#include "ProtoBridgeCoreModule.h"
+#include "ProtoBridgeLogs.h"
 #include "ProtoBridgeCoreSettings.h"
 
 void FProtobufStringUtils::FStringToStdString(FStringView InStr, std::string& OutStr)
@@ -145,7 +145,7 @@ void FProtobufStringUtils::FGuidToStdString(const FGuid& InGuid, std::string& Ou
 
 	TStringBuilder<64> Builder;
 	Builder << InGuid;
-
+	
 	const int32 SrcLen = Builder.Len();
 	const int32 DestLen = FTCHARToUTF8_Convert::ConvertedLength(Builder.GetData(), SrcLen);
 

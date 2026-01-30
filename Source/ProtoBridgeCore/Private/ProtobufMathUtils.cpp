@@ -1,6 +1,6 @@
 ﻿#include "ProtobufMathUtils.h"
 #include "ProtobufIncludes.h"
-#include "ProtoBridgeCoreModule.h"
+#include "ProtoBridgeLogs.h"
 
 bool FProtobufMathUtils::FDateTimeToTimestamp(const FDateTime& InDateTime, google::protobuf::Timestamp& OutTimestamp)
 {

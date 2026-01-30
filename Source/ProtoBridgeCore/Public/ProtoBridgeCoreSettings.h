@@ -13,6 +13,8 @@ class PROTOBRIDGECORE_API UProtoBridgeCoreSettings : public UDeveloperSettings
 public:
 	UProtoBridgeCoreSettings();
 
+	virtual void PostInitProperties() override;
+
 	UPROPERTY(Config, EditAnywhere, Category = "Serialization", meta = (DisplayName = "Int64 Serialization Strategy"))
 	EProtobufInt64Strategy Int64SerializationStrategy;
 

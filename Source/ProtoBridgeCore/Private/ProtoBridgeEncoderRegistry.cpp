@@ -1,9 +1,7 @@
 ﻿#include "ProtoBridgeEncoderRegistry.h"
-#include "ProtoBridgeSubsystem.h"
 #include "ProtobufStringUtils.h"
 #include "ProtobufIncludes.h"
 #include "ProtobufReflectionUtils.h"
-#include "ProtoBridgeCoreModule.h"
 
 namespace ProtoBridge::EncoderRegistry
 {
@@ -63,12 +61,10 @@ namespace ProtoBridge::EncoderRegistry
 		}
 	}
 
-	void RegisterDefaultEncoders(UProtoBridgeSubsystem& Subsystem)
+	void GetDefaultEncoders(TMap<EVariantTypes, FVariantEncoder>& OutEncoders)
 	{
-		TMap<EVariantTypes, FVariantEncoder> Batch;
-		RegisterPrimitiveEncoders(Batch);
-		RegisterNumericEncoders(Batch);
-		RegisterStringEncoders(Batch);
-		Subsystem.RegisterEncodersBatch(Batch);
+		RegisterPrimitiveEncoders(OutEncoders);
+		RegisterNumericEncoders(OutEncoders);
+		RegisterStringEncoders(OutEncoders);
 	}
 }

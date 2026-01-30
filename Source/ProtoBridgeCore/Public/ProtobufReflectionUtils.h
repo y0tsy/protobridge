@@ -7,7 +7,7 @@
 #include "UObject/SoftObjectPath.h"
 #include "ProtobufStringUtils.h"
 #include "ProtoBridgeTypes.h"
-#include "ProtoBridgeCoreModule.h"
+#include "ProtoBridgeLogs.h"
 
 namespace google {
 namespace protobuf {

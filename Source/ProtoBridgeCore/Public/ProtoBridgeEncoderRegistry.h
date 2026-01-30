@@ -1,10 +1,9 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-
-class UProtoBridgeSubsystem;
+#include "ProtoBridgeTypes.h"
 
 namespace ProtoBridge::EncoderRegistry
 {
-	void PROTOBRIDGECORE_API RegisterDefaultEncoders(UProtoBridgeSubsystem& Subsystem);
+	void PROTOBRIDGECORE_API GetDefaultEncoders(TMap<EVariantTypes, FVariantEncoder>& OutEncoders);
 }

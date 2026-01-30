@@ -13,13 +13,12 @@ void UProtoBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	
 	{
 		FWriteScopeLock Lock(StateLock);
-		if (!VariantEncoders.IsValid())
-		{
-			VariantEncoders = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>();
-		}
+		VariantEncoders = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>();
 	}
 
-	ProtoBridge::EncoderRegistry::RegisterDefaultEncoders(*this);
+	TMap<EVariantTypes, FVariantEncoder> DefaultEncoders;
+	ProtoBridge::EncoderRegistry::GetDefaultEncoders(DefaultEncoders);
+	RegisterEncodersBatch(DefaultEncoders);
 }
 
 void UProtoBridgeSubsystem::Deinitialize()
@@ -33,34 +32,54 @@ void UProtoBridgeSubsystem::Deinitialize()
 
 void UProtoBridgeSubsystem::RegisterVariantEncoder(EVariantTypes Type, FVariantEncoder Encoder)
 {
-	FWriteScopeLock Lock(StateLock);
-	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> NewMap;
-	if (VariantEncoders.IsValid())
+	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> OldMap;
 	{
-		NewMap = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>(*VariantEncoders);
+		FReadScopeLock Lock(StateLock);
+		OldMap = VariantEncoders;
+	}
+
+	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> NewMap;
+	if (OldMap.IsValid())
+	{
+		NewMap = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>(*OldMap);
 	}
 	else
 	{
 		NewMap = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>();
 	}
+	
 	NewMap->Add(Type, Encoder);
-	VariantEncoders = NewMap;
+
+	{
+		FWriteScopeLock Lock(StateLock);
+		VariantEncoders = NewMap;
+	}
 }
 
 void UProtoBridgeSubsystem::RegisterEncodersBatch(const TMap<EVariantTypes, FVariantEncoder>& InEncoders)
 {
-	FWriteScopeLock Lock(StateLock);
-	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> NewMap;
-	if (VariantEncoders.IsValid())
+	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> OldMap;
 	{
-		NewMap = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>(*VariantEncoders);
+		FReadScopeLock Lock(StateLock);
+		OldMap = VariantEncoders;
+	}
+
+	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> NewMap;
+	if (OldMap.IsValid())
+	{
+		NewMap = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>(*OldMap);
 	}
 	else
 	{
 		NewMap = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>();
 	}
+
 	NewMap->Append(InEncoders);
-	VariantEncoders = NewMap;
+
+	{
+		FWriteScopeLock Lock(StateLock);
+		VariantEncoders = NewMap;
+	}
 }
 
 void UProtoBridgeSubsystem::SetInt64SerializationStrategy(EProtobufInt64Strategy InStrategy)

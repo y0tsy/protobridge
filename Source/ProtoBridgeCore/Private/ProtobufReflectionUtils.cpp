@@ -1,7 +1,8 @@
 ﻿#include "ProtobufReflectionUtils.h"
 #include "ProtobufIncludes.h"
-#include "ProtoBridgeCoreModule.h"
+#include "ProtoBridgeLogs.h"
 #include "ProtoBridgeCoreSettings.h"
+#include <string>
 
 bool FProtobufReflectionUtils::FVariantToProtoValue(const FVariant& InVariant, google::protobuf::Value& OutValue, const FProtoSerializationContext& Context)
 {
@@ -45,7 +46,7 @@ bool FProtobufReflectionUtils::ConvertInt64ToProtoValue(int64 InVal, google::pro
 	{
 	case EProtobufInt64Strategy::AlwaysString:
 	{
-		FProtobufStringUtils::FStringToStdString(LexToString(InVal), *OutValue.mutable_string_value());
+		*OutValue.mutable_string_value() = std::to_string(InVal);
 		return true;
 	}
 

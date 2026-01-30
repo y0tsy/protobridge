@@ -15,6 +15,7 @@ namespace ProtoBridgeConstants
 	constexpr int64 MinSafeInteger = -9007199254740991LL;
 }
 
+UENUM()
 enum class EProtobufInt64Strategy : uint8
 {
 	AlwaysNumber,
