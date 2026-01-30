@@ -1,12 +1,8 @@
 ﻿#include "FieldStrategyFactory.h"
-#include "FieldStrategy.h"
-#include "PrimitiveFieldStrategy.h"
-#include "StringFieldStrategy.h"
-#include "EnumFieldStrategy.h"
-#include "MessageFieldStrategy.h"
-#include "MapFieldStrategy.h"
+#include "StrategyPool.h"
 #include "UnrealStrategies.h"
 #include "../TypeRegistry.h"
+#include "../Config/UEDefinitions.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -19,11 +15,11 @@
 #pragma warning(pop)
 #endif
 
-std::unique_ptr<IFieldStrategy> FFieldStrategyFactory::Create(const google::protobuf::FieldDescriptor* Field)
+const IFieldStrategy* FFieldStrategyFactory::GetStrategy(const google::protobuf::FieldDescriptor* Field, const FStrategyPool& Pool)
 {
 	if (Field->is_map())
 	{
-		return std::make_unique<FMapFieldStrategy>(Field);
+		return Pool.GetMapStrategy();
 	}
 
 	if (Field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE)
@@ -32,25 +28,25 @@ std::unique_ptr<IFieldStrategy> FFieldStrategyFactory::Create(const google::prot
 		
 		if (const FUnrealTypeInfo* Info = FTypeRegistry::GetInfo(FullName))
 		{
-			if (Info->UtilsFuncPrefix == "Json" || Info->UtilsFuncPrefix == "JsonList")
+			if (Info->UtilityClass == UE::Names::Utils::Struct)
 			{
-				return std::make_unique<FUnrealJsonStrategy>(Field);
+				return Pool.GetUnrealJsonStrategy();
 			}
-			return std::make_unique<FUnrealStructStrategy>(Field, Info);
+			return Pool.GetUnrealStructStrategy();
 		}
 
-		return std::make_unique<FMessageFieldStrategy>(Field);
+		return Pool.GetMessageStrategy();
 	}
 
 	if (Field->type() == google::protobuf::FieldDescriptor::TYPE_STRING || Field->type() == google::protobuf::FieldDescriptor::TYPE_BYTES)
 	{
-		return std::make_unique<FStringFieldStrategy>(Field);
+		return Pool.GetStringStrategy();
 	}
 
 	if (Field->type() == google::protobuf::FieldDescriptor::TYPE_ENUM)
 	{
-		return std::make_unique<FEnumFieldStrategy>(Field);
+		return Pool.GetEnumStrategy();
 	}
 
-	return std::make_unique<FPrimitiveFieldStrategy>(Field);
+	return Pool.GetPrimitiveStrategy();
 }

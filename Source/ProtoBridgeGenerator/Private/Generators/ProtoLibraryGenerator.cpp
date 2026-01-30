@@ -1,5 +1,6 @@
 ﻿#include "ProtoLibraryGenerator.h"
 #include "../GeneratorContext.h"
+#include "../Config/UEDefinitions.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -14,21 +15,25 @@
 
 void FProtoLibraryGenerator::GenerateHeader(FGeneratorContext& Ctx, const std::string& BaseName, const std::vector<const google::protobuf::Descriptor*>& Messages)
 {
-	Ctx.Writer.Print("UCLASS()\n");
-	FScopedClass LibClass(Ctx.Writer, "class " + Ctx.ApiMacro + "U" + BaseName + "ProtoLibrary : public UBlueprintFunctionLibrary");
+	Ctx.Printer.Print("$macro$()\n", "macro", UE::Names::Macros::UCLASS);
+	FScopedClass LibClass(Ctx.Printer, "class " + Ctx.ApiMacro + "U" + BaseName + "ProtoLibrary : public UBlueprintFunctionLibrary");
 	
-	Ctx.Writer.Print("GENERATED_BODY()\npublic:\n");
+	Ctx.Printer.Print("$macro$()\npublic:\n", "macro", UE::Names::Macros::GENERATED_BODY);
 
 	for (const google::protobuf::Descriptor* Msg : Messages)
 	{
-		std::string UeType = Ctx.GetSafeUeName(std::string(Msg->full_name()), 'F');
+		std::string UeType = Ctx.NameResolver.GetSafeUeName(std::string(Msg->full_name()), 'F');
 		std::string FuncNameSuffix = UeType.substr(1);
 
-		Ctx.Writer.Print("UFUNCTION(BlueprintCallable, Category=\"Protobuf|$base$\")\n", "base", BaseName);
-		Ctx.Writer.Print("static bool Encode$func$(const $type$& InStruct, TArray<uint8>& OutBytes);\n\n", "func", FuncNameSuffix, "type", UeType);
+		Ctx.Printer.Print("$macro$($bp$, $cat$=\"Protobuf|$base$\")\n", 
+			"macro", UE::Names::Macros::UFUNCTION, "bp", UE::Names::Specifiers::BlueprintCallable, "cat", UE::Names::Specifiers::Category, "base", BaseName);
+		Ctx.Printer.Print("static bool Encode$func$(const $type$& InStruct, $arr$<uint8>& OutBytes);\n\n", 
+			"func", FuncNameSuffix, "type", UeType, "arr", UE::Names::Types::TArray);
 
-		Ctx.Writer.Print("UFUNCTION(BlueprintCallable, Category=\"Protobuf|$base$\")\n", "base", BaseName);
-		Ctx.Writer.Print("static bool Decode$func$(const TArray<uint8>& InBytes, $type$& OutStruct);\n\n", "func", FuncNameSuffix, "type", UeType);
+		Ctx.Printer.Print("$macro$($bp$, $cat$=\"Protobuf|$base$\")\n", 
+			"macro", UE::Names::Macros::UFUNCTION, "bp", UE::Names::Specifiers::BlueprintCallable, "cat", UE::Names::Specifiers::Category, "base", BaseName);
+		Ctx.Printer.Print("static bool Decode$func$(const $arr$<uint8>& InBytes, $type$& OutStruct);\n\n", 
+			"func", FuncNameSuffix, "type", UeType, "arr", UE::Names::Types::TArray);
 	}
 }
 
@@ -36,32 +41,32 @@ void FProtoLibraryGenerator::GenerateSource(FGeneratorContext& Ctx, const std::s
 {
 	for (const google::protobuf::Descriptor* Msg : Messages)
 	{
-		std::string UeType = Ctx.GetSafeUeName(std::string(Msg->full_name()), 'F');
+		std::string UeType = Ctx.NameResolver.GetSafeUeName(std::string(Msg->full_name()), 'F');
 		std::string FuncNameSuffix = UeType.substr(1);
-		std::string ProtoType = Ctx.GetProtoCppType(Msg);
+		std::string ProtoType = Ctx.NameResolver.GetProtoCppType(Msg);
 
 		{
-			FScopedBlock EncodeBlock(Ctx.Writer, 
-				"bool U" + BaseName + "ProtoLibrary::Encode" + FuncNameSuffix + "(const " + UeType + "& InStruct, TArray<uint8>& OutBytes)");
-			Ctx.Writer.Print("$proto$ Proto;\n", "proto", ProtoType);
-			Ctx.Writer.Print("InStruct.ToProto(Proto);\n");
-			Ctx.Writer.Print("int32 Size = Proto.ByteSizeLong();\n");
-			Ctx.Writer.Print("OutBytes.SetNumUninitialized(Size);\n");
-			Ctx.Writer.Print("return Proto.SerializeToArray(OutBytes.GetData(), Size);\n");
+			FScopedBlock EncodeBlock(Ctx.Printer, 
+				"bool U" + BaseName + "ProtoLibrary::Encode" + FuncNameSuffix + "(const " + UeType + "& InStruct, " + UE::Names::Types::TArray + "<uint8>& OutBytes)");
+			Ctx.Printer.Print("$proto$ Proto;\n", "proto", ProtoType);
+			Ctx.Printer.Print("InStruct.ToProto(Proto);\n");
+			Ctx.Printer.Print("int32 Size = Proto.ByteSizeLong();\n");
+			Ctx.Printer.Print("OutBytes.SetNumUninitialized(Size);\n");
+			Ctx.Printer.Print("return Proto.SerializeToArray(OutBytes.GetData(), Size);\n");
 		}
 
 		{
-			FScopedBlock DecodeBlock(Ctx.Writer, 
-				"bool U" + BaseName + "ProtoLibrary::Decode" + FuncNameSuffix + "(const TArray<uint8>& InBytes, " + UeType + "& OutStruct)");
-			Ctx.Writer.Print("$proto$ Proto;\n", "proto", ProtoType);
+			FScopedBlock DecodeBlock(Ctx.Printer, 
+				"bool U" + BaseName + "ProtoLibrary::Decode" + FuncNameSuffix + "(const " + UE::Names::Types::TArray + "<uint8>& InBytes, " + UeType + "& OutStruct)");
+			Ctx.Printer.Print("$proto$ Proto;\n", "proto", ProtoType);
 			
-			Ctx.Writer.Print("if (Proto.ParseFromArray(InBytes.GetData(), InBytes.Num()))\n");
+			Ctx.Printer.Print("if (InBytes.Num() > 0 && Proto.ParseFromArray(InBytes.GetData(), InBytes.Num()))\n");
 			{
-				FScopedBlock IfBlock(Ctx.Writer);
-				Ctx.Writer.Print("OutStruct.FromProto(Proto);\n");
-				Ctx.Writer.Print("return true;\n");
+				FScopedBlock IfBlock(Ctx.Printer);
+				Ctx.Printer.Print("OutStruct.FromProto(Proto);\n");
+				Ctx.Printer.Print("return true;\n");
 			}
-			Ctx.Writer.Print("return false;\n");
+			Ctx.Printer.Print("return false;\n");
 		}
 	}
 }

@@ -1,7 +1,8 @@
 ﻿#include "DependencySorter.h"
-#include "GeneratorContext.h"
 #include <map>
 #include <set>
+#include <stack>
+#include <stdexcept>
 #include <algorithm>
 
 #ifdef _MSC_VER
@@ -10,7 +11,6 @@
 #endif
 
 #include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h> 
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -18,107 +18,147 @@
 
 namespace
 {
-	void CollectMessagesRecursive(const google::protobuf::Descriptor* Message, std::vector<const google::protobuf::Descriptor*>& OutMessages)
+	enum class EVisitState
+	{
+		Unvisited,
+		Visiting,
+		Visited
+	};
+
+	struct FGraphNode
+	{
+		const google::protobuf::Descriptor* Message;
+		std::set<const google::protobuf::Descriptor*> Dependencies;
+		EVisitState State = EVisitState::Unvisited;
+	};
+
+	void CollectMessages(const google::protobuf::Descriptor* Message, std::vector<const google::protobuf::Descriptor*>& OutMessages)
 	{
 		if (Message->options().map_entry()) return;
 
 		OutMessages.push_back(Message);
 		for (int i = 0; i < Message->nested_type_count(); ++i)
 		{
-			CollectMessagesRecursive(Message->nested_type(i), OutMessages);
+			CollectMessages(Message->nested_type(i), OutMessages);
 		}
 	}
 
-	void CollectMessages(const google::protobuf::FileDescriptor* File, std::vector<const google::protobuf::Descriptor*>& OutMessages)
+	void AddDependency(std::map<const google::protobuf::Descriptor*, FGraphNode>& Graph, 
+		const google::protobuf::Descriptor* Source, 
+		const google::protobuf::Descriptor* Target)
 	{
-		for (int i = 0; i < File->message_type_count(); ++i)
+		if (Source == Target) return; 
+		if (Target->file() != Source->file()) return; 
+
+		Graph[Source].Dependencies.insert(Target);
+	}
+
+	void BuildGraph(const std::vector<const google::protobuf::Descriptor*>& Messages, std::map<const google::protobuf::Descriptor*, FGraphNode>& OutGraph)
+	{
+		for (const google::protobuf::Descriptor* Msg : Messages)
 		{
-			CollectMessagesRecursive(File->message_type(i), OutMessages);
+			OutGraph[Msg].Message = Msg;
 		}
-	}
 
-	void BuildDependencyGraph(const std::vector<const google::protobuf::Descriptor*>& Messages, std::map<const google::protobuf::Descriptor*, std::set<const google::protobuf::Descriptor*>>& OutDeps)
-	{
 		for (const google::protobuf::Descriptor* Msg : Messages)
 		{
 			for (int i = 0; i < Msg->field_count(); ++i)
 			{
 				const google::protobuf::FieldDescriptor* Field = Msg->field(i);
-				
+
 				if (Field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE)
 				{
-					const google::protobuf::Descriptor* FieldType = Field->message_type();
-
+					const google::protobuf::Descriptor* Dependency = Field->message_type();
+					
 					if (Field->is_map())
 					{
-						const google::protobuf::FieldDescriptor* ValField = FieldType->field(1); 
-						if (ValField->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE)
+						const google::protobuf::FieldDescriptor* ValueField = Dependency->field(1);
+						if (ValueField->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE)
 						{
-							const google::protobuf::Descriptor* ValType = ValField->message_type();
-							if (ValType->file() == Msg->file())
-							{
-								OutDeps[Msg].insert(ValType);
-							}
+							AddDependency(OutGraph, Msg, ValueField->message_type());
 						}
 					}
 					else
 					{
-						if (FieldType->file() == Msg->file() && FieldType != Msg)
-						{
-							OutDeps[Msg].insert(FieldType);
-						}
+						AddDependency(OutGraph, Msg, Dependency);
+					}
+				}
+			}
+
+			for (int i = 0; i < Msg->oneof_decl_count(); ++i)
+			{
+				const google::protobuf::OneofDescriptor* OneOf = Msg->oneof_decl(i);
+				for (int j = 0; j < OneOf->field_count(); ++j)
+				{
+					const google::protobuf::FieldDescriptor* Field = OneOf->field(j);
+					if (Field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE)
+					{
+						AddDependency(OutGraph, Msg, Field->message_type());
 					}
 				}
 			}
 		}
 	}
 
-	void Visit(const google::protobuf::Descriptor* Node, 
-					  std::map<const google::protobuf::Descriptor*, std::set<const google::protobuf::Descriptor*>>& Deps,
-					  std::set<const google::protobuf::Descriptor*>& Visited,
-					  std::set<const google::protobuf::Descriptor*>& TempVisited,
-					  std::vector<const google::protobuf::Descriptor*>& Sorted)
+	void TopologicalSort(std::map<const google::protobuf::Descriptor*, FGraphNode>& Graph, std::vector<const google::protobuf::Descriptor*>& OutSorted)
 	{
-		if (TempVisited.count(Node))
+		std::stack<const google::protobuf::Descriptor*> Stack;
+		
+		for (auto& Pair : Graph)
 		{
-			FGeneratorContext::Log("WARNING: Cyclic dependency detected involving " + std::string(Node->full_name()));
-			return;
+			if (Pair.second.State == EVisitState::Unvisited)
+			{
+				Stack.push(Pair.first);
+				
+				while (!Stack.empty())
+				{
+					const google::protobuf::Descriptor* Current = Stack.top();
+					FGraphNode& Node = Graph[Current];
+
+					if (Node.State == EVisitState::Unvisited)
+					{
+						Node.State = EVisitState::Visiting;
+						for (const google::protobuf::Descriptor* Dep : Node.Dependencies)
+						{
+							FGraphNode& DepNode = Graph[Dep];
+							if (DepNode.State == EVisitState::Unvisited)
+							{
+								Stack.push(Dep);
+							}
+							else if (DepNode.State == EVisitState::Visiting)
+							{
+								throw std::runtime_error("Cyclic dependency detected involving " + std::string(Current->full_name()) + " and " + std::string(Dep->full_name()) + ". Unreal Engine USTRUCTs cannot have cyclic dependencies.");
+							}
+						}
+					}
+					else
+					{
+						Stack.pop();
+						if (Node.State == EVisitState::Visiting)
+						{
+							Node.State = EVisitState::Visited;
+							OutSorted.push_back(Current);
+						}
+					}
+				}
+			}
 		}
-
-		if (Visited.count(Node)) return;
-
-		TempVisited.insert(Node);
-
-		for (const google::protobuf::Descriptor* Dep : Deps[Node])
-		{
-			Visit(Dep, Deps, Visited, TempVisited, Sorted);
-		}
-
-		TempVisited.erase(Node);
-		Visited.insert(Node);
-		Sorted.push_back(Node);
 	}
 }
 
 std::vector<const google::protobuf::Descriptor*> FDependencySorter::Sort(const google::protobuf::FileDescriptor* File)
 {
 	std::vector<const google::protobuf::Descriptor*> AllMessages;
-	CollectMessages(File, AllMessages);
-
-	std::map<const google::protobuf::Descriptor*, std::set<const google::protobuf::Descriptor*>> Deps;
-	BuildDependencyGraph(AllMessages, Deps);
-
-	std::vector<const google::protobuf::Descriptor*> Sorted;
-	std::set<const google::protobuf::Descriptor*> Visited;
-	std::set<const google::protobuf::Descriptor*> TempVisited; 
-
-	for (const google::protobuf::Descriptor* Msg : AllMessages)
+	for (int i = 0; i < File->message_type_count(); ++i)
 	{
-		if (Visited.find(Msg) == Visited.end())
-		{
-			Visit(Msg, Deps, Visited, TempVisited, Sorted);
-		}
+		CollectMessages(File->message_type(i), AllMessages);
 	}
 
-	return Sorted;
+	std::map<const google::protobuf::Descriptor*, FGraphNode> Graph;
+	BuildGraph(AllMessages, Graph);
+
+	std::vector<const google::protobuf::Descriptor*> Result;
+	TopologicalSort(Graph, Result);
+
+	return Result;
 }

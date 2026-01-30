@@ -14,6 +14,7 @@
 #endif
 
 class FGeneratorContext;
+class FStrategyPool;
 namespace google {
 	namespace protobuf {
 		class FileDescriptor;
@@ -33,6 +34,6 @@ public:
 
 private:
 	std::string GetFileNameWithoutExtension(const std::string& FileName) const;
-	void GenerateHeader(const google::protobuf::FileDescriptor* File, const std::string& BaseName, FGeneratorContext& Ctx, const std::vector<const google::protobuf::Descriptor*>& Messages) const;
-	void GenerateSource(const google::protobuf::FileDescriptor* File, const std::string& BaseName, FGeneratorContext& Ctx, const std::vector<const google::protobuf::Descriptor*>& Messages) const;
+	void GenerateHeader(const google::protobuf::FileDescriptor* File, const std::string& BaseName, FGeneratorContext& Ctx, const std::vector<const google::protobuf::Descriptor*>& Messages, const FStrategyPool& Pool) const;
+	void GenerateSource(const google::protobuf::FileDescriptor* File, const std::string& BaseName, FGeneratorContext& Ctx, const std::vector<const google::protobuf::Descriptor*>& Messages, const FStrategyPool& Pool) const;
 };

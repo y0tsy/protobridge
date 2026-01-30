@@ -1,6 +1,7 @@
 ﻿#include "MapFieldStrategy.h"
 #include "../GeneratorContext.h"
 #include "../TypeRegistry.h"
+#include "../Config/UEDefinitions.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -8,167 +9,158 @@
 #endif
 
 #include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
 
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
 
-FMapFieldStrategy::FMapFieldStrategy(const google::protobuf::FieldDescriptor* InField)
-	: Field(InField)
+bool FMapFieldStrategy::IsRepeated(const google::protobuf::FieldDescriptor* Field) const { return false; } 
+
+bool FMapFieldStrategy::CanBeUProperty(const google::protobuf::FieldDescriptor* Field) const
 {
-	const google::protobuf::Descriptor* MapEntry = Field->message_type();
-	KeyField = MapEntry->field(0);
-	ValueField = MapEntry->field(1);
-	
+	const google::protobuf::FieldDescriptor* ValueField = Field->message_type()->field(1);
 	if (ValueField->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE)
 	{
-		ValueTypeInfo = FTypeRegistry::GetInfo(std::string(ValueField->message_type()->full_name()));
-	}
-	else
-	{
-		ValueTypeInfo = nullptr;
-	}
-}
-
-const google::protobuf::FieldDescriptor* FMapFieldStrategy::GetField() const { return Field; }
-bool FMapFieldStrategy::IsRepeated() const { return false; } 
-
-bool FMapFieldStrategy::CanBeUProperty() const
-{
-	if (ValueTypeInfo && !ValueTypeInfo->bCanBeUProperty)
-	{
-		return false;
+		const FUnrealTypeInfo* Info = FTypeRegistry::GetInfo(std::string(ValueField->message_type()->full_name()));
+		if (Info && !Info->bCanBeUProperty)
+		{
+			return false;
+		}
 	}
 	return true;
 }
 
-std::string FMapFieldStrategy::GetCppType() const
+std::string FMapFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const
 {
-	std::string KeyType = GetUeTypeName(KeyField);
-	std::string ValueType = GetUeTypeName(ValueField);
-	return "TMap<" + KeyType + ", " + ValueType + ">";
+	const google::protobuf::FieldDescriptor* KeyField = Field->message_type()->field(0);
+	const google::protobuf::FieldDescriptor* ValueField = Field->message_type()->field(1);
+	
+	FNameResolver Resolver; 
+
+	std::string KeyType = GetUeTypeName(KeyField, FGeneratorContext(nullptr, "")); 
+	std::string ValueType = GetUeTypeName(ValueField, FGeneratorContext(nullptr, ""));
+	
+	return std::string(UE::Names::Types::TMap) + "<" + KeyType + ", " + ValueType + ">";
 }
 
-void FMapFieldStrategy::WriteToProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+void FMapFieldStrategy::WriteToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const
 {
+	const google::protobuf::FieldDescriptor* KeyField = Field->message_type()->field(0);
+	const google::protobuf::FieldDescriptor* ValueField = Field->message_type()->field(1);
+
 	bool bKeyIsPrimitive = KeyField->type() != google::protobuf::FieldDescriptor::TYPE_MESSAGE;
 	bool bValueIsPrimitive = ValueField->type() != google::protobuf::FieldDescriptor::TYPE_MESSAGE;
 
 	if (bKeyIsPrimitive && bValueIsPrimitive)
 	{
-		Ctx.Writer.Print("FProtobufContainerUtils::TMapToProtoMap($ue$, OutProto.mutable_$proto$());\n", 
-			"ue", UeVar, "proto", ProtoVar);
+		Ctx.Printer.Print("$utils$::TMapToProtoMap($ue$, OutProto.mutable_$proto$());\n", 
+			"utils", UE::Names::Utils::Container, "ue", UeVar, "proto", ProtoVar);
 		return;
 	}
 
-	FScopedBlock Loop(Ctx.Writer, "for (const auto& Elem : " + UeVar + ")");
+	FScopedBlock Loop(Ctx.Printer, "for (const auto& Elem : " + UeVar + ")");
 
 	std::string KeyStr = "Elem.Key";
 	if (KeyField->type() == google::protobuf::FieldDescriptor::TYPE_STRING) 
-		KeyStr = "FProtobufStringUtils::FStringToStdString(Elem.Key)";
+		KeyStr = std::string(UE::Names::Utils::String) + "::FStringToStdString(Elem.Key)";
 
 	if (ValueField->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE)
 	{
-			std::string ProtoValueType = Ctx.GetProtoCppType(ValueField->message_type());
-			Ctx.Writer.Print("$type$& MapVal = (*OutProto.mutable_$proto$())[$key$];\n", 
+			std::string ProtoValueType = Ctx.NameResolver.GetProtoCppType(ValueField->message_type());
+			Ctx.Printer.Print("$type$& MapVal = (*OutProto.mutable_$proto$())[$key$];\n", 
 				"type", ProtoValueType, "proto", ProtoVar, "key", KeyStr);
+
+			const FUnrealTypeInfo* ValueTypeInfo = FTypeRegistry::GetInfo(std::string(ValueField->message_type()->full_name()));
 
 			if (ValueTypeInfo)
 			{
 				std::string FuncName = ValueTypeInfo->UtilityClass + "::" + ValueTypeInfo->UtilsFuncPrefix + "ToProto";
-				
-				if (ValueTypeInfo->UtilsFuncPrefix == "FDateTime") FuncName = "FProtobufMathUtils::FDateTimeToTimestamp";
-				else if (ValueTypeInfo->UtilsFuncPrefix == "FTimespan") FuncName = "FProtobufMathUtils::FTimespanToDuration";
-				else if (ValueTypeInfo->UtilsFuncPrefix == "Any") FuncName = "FProtobufReflectionUtils::AnyToProto";
-
 				std::string ValArg = ValueTypeInfo->bIsCustomType ? "&MapVal" : "MapVal";
-
-				Ctx.Writer.Print("$func$(Elem.Value, $arg$);\n", "func", FuncName, "arg", ValArg);
+				Ctx.Printer.Print("$func$(Elem.Value, $arg$);\n", "func", FuncName, "arg", ValArg);
 			}
 			else
 			{
-				Ctx.Writer.Print("Elem.Value.ToProto(MapVal);\n");
+				Ctx.Printer.Print("Elem.Value.ToProto(MapVal);\n");
 			}
 	}
 	else
 	{
 		std::string ValStr = "Elem.Value";
 		if (ValueField->type() == google::protobuf::FieldDescriptor::TYPE_STRING) 
-			ValStr = "FProtobufStringUtils::FStringToStdString(Elem.Value)";
+			ValStr = std::string(UE::Names::Utils::String) + "::FStringToStdString(Elem.Value)";
 		else if (ValueField->type() == google::protobuf::FieldDescriptor::TYPE_ENUM)
-			ValStr = "static_cast<" + Ctx.GetProtoCppType(ValueField->enum_type()) + ">(Elem.Value)";
+			ValStr = "static_cast<" + Ctx.NameResolver.GetProtoCppType(ValueField->enum_type()) + ">(Elem.Value)";
 
-		Ctx.Writer.Print("(*OutProto.mutable_$proto$())[$key$] = $val$;\n", 
+		Ctx.Printer.Print("(*OutProto.mutable_$proto$())[$key$] = $val$;\n", 
 			"proto", ProtoVar, "key", KeyStr, "val", ValStr);
 	}
 }
 
-void FMapFieldStrategy::WriteFromProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+void FMapFieldStrategy::WriteFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const
 {
+	const google::protobuf::FieldDescriptor* KeyField = Field->message_type()->field(0);
+	const google::protobuf::FieldDescriptor* ValueField = Field->message_type()->field(1);
+
 	bool bKeyIsPrimitive = KeyField->type() != google::protobuf::FieldDescriptor::TYPE_MESSAGE;
 	bool bValueIsPrimitive = ValueField->type() != google::protobuf::FieldDescriptor::TYPE_MESSAGE;
 
 	if (bKeyIsPrimitive && bValueIsPrimitive)
 	{
-		Ctx.Writer.Print("FProtobufContainerUtils::ProtoMapToTMap(InProto.$proto$(), $ue$);\n", 
-			"proto", ProtoVar, "ue", UeVar);
+		Ctx.Printer.Print("$utils$::ProtoMapToTMap(InProto.$proto$(), $ue$);\n", 
+			"utils", UE::Names::Utils::Container, "proto", ProtoVar, "ue", UeVar);
 		return;
 	}
 
-	FScopedBlock Loop(Ctx.Writer, "for (const auto& Elem : InProto." + ProtoVar + "())");
+	FScopedBlock Loop(Ctx.Printer, "for (const auto& Elem : InProto." + ProtoVar + "())");
 
 	std::string KeyStr = "Elem.first";
 	if (KeyField->type() == google::protobuf::FieldDescriptor::TYPE_STRING) 
-		KeyStr = "FProtobufStringUtils::StdStringToFString(Elem.first)";
+		KeyStr = std::string(UE::Names::Utils::String) + "::StdStringToFString(Elem.first)";
 
 	if (ValueField->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE)
 	{
-		std::string UeValueType = GetUeTypeName(ValueField);
-		Ctx.Writer.Print("$type$& Val = $ue$.Add($key$);\n", "type", UeValueType, "ue", UeVar, "key", KeyStr);
+		std::string UeValueType = GetUeTypeName(ValueField, Ctx);
+		Ctx.Printer.Print("$type$& Val = $ue$.Add($key$);\n", "type", UeValueType, "ue", UeVar, "key", KeyStr);
 		
+		const FUnrealTypeInfo* ValueTypeInfo = FTypeRegistry::GetInfo(std::string(ValueField->message_type()->full_name()));
+
 		if (ValueTypeInfo)
 		{
 			std::string FuncName = ValueTypeInfo->UtilityClass + "::ProtoTo" + ValueTypeInfo->UtilsFuncPrefix;
-			
-			if (ValueTypeInfo->UtilsFuncPrefix == "FDateTime") FuncName = "FProtobufMathUtils::TimestampToFDateTime";
-			else if (ValueTypeInfo->UtilsFuncPrefix == "FTimespan") FuncName = "FProtobufMathUtils::DurationToFTimespan";
-			else if (ValueTypeInfo->UtilsFuncPrefix == "Any") FuncName = "FProtobufReflectionUtils::ProtoToAny";
-			
-			Ctx.Writer.Print("Val = $func$(Elem.second);\n", "func", FuncName);
+			Ctx.Printer.Print("Val = $func$(Elem.second);\n", "func", FuncName);
 		}
 		else
 		{
-			Ctx.Writer.Print("Val.FromProto(Elem.second);\n");
+			Ctx.Printer.Print("Val.FromProto(Elem.second);\n");
 		}
 	}
 	else
 	{
 		std::string ValStr = "Elem.second";
 		if (ValueField->type() == google::protobuf::FieldDescriptor::TYPE_STRING) 
-			ValStr = "FProtobufStringUtils::StdStringToFString(Elem.second)";
+			ValStr = std::string(UE::Names::Utils::String) + "::StdStringToFString(Elem.second)";
 		else if (ValueField->type() == google::protobuf::FieldDescriptor::TYPE_ENUM)
-			ValStr = "static_cast<" + GetUeTypeName(ValueField) + ">(Elem.second)";
+			ValStr = "static_cast<" + GetUeTypeName(ValueField, Ctx) + ">(Elem.second)";
 
-		Ctx.Writer.Print("$ue$.Add($key$, $val$);\n", "ue", UeVar, "key", KeyStr, "val", ValStr);
+		Ctx.Printer.Print("$ue$.Add($key$, $val$);\n", "ue", UeVar, "key", KeyStr, "val", ValStr);
 	}
 }
 
-void FMapFieldStrategy::WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const {}
-void FMapFieldStrategy::WriteInnerFromProto(FGeneratorContext& Ctx, const std::string& UeTarget, const std::string& ProtoVal) const {}
+void FMapFieldStrategy::WriteInnerToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVal, const std::string& ProtoTarget) const {}
+void FMapFieldStrategy::WriteInnerFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeTarget, const std::string& ProtoVal) const {}
 
-std::string FMapFieldStrategy::GetUeTypeName(const google::protobuf::FieldDescriptor* F) const
+std::string FMapFieldStrategy::GetUeTypeName(const google::protobuf::FieldDescriptor* F, const FGeneratorContext& Ctx) const
 {
-	if (F->type() == google::protobuf::FieldDescriptor::TYPE_STRING) return "FString";
-	if (F->type() == google::protobuf::FieldDescriptor::TYPE_INT32) return "int32";
-	if (F->type() == google::protobuf::FieldDescriptor::TYPE_INT64) return "int64";
-	if (F->type() == google::protobuf::FieldDescriptor::TYPE_UINT32) return "int32";
-	if (F->type() == google::protobuf::FieldDescriptor::TYPE_BOOL) return "bool";
+	namespace Types = UE::Names::Types;
+	if (F->type() == google::protobuf::FieldDescriptor::TYPE_STRING) return Types::FString;
+	if (F->type() == google::protobuf::FieldDescriptor::TYPE_INT32) return Types::Int32;
+	if (F->type() == google::protobuf::FieldDescriptor::TYPE_INT64) return Types::Int64;
+	if (F->type() == google::protobuf::FieldDescriptor::TYPE_UINT32) return Types::Int32;
+	if (F->type() == google::protobuf::FieldDescriptor::TYPE_BOOL) return Types::Bool;
 	
 	if (F->type() == google::protobuf::FieldDescriptor::TYPE_ENUM)
 	{
-		FGeneratorContext Ctx(nullptr, "");
-		return Ctx.GetSafeUeName(std::string(F->enum_type()->full_name()), 'E');
+		return Ctx.NameResolver.GetSafeUeName(std::string(F->enum_type()->full_name()), 'E');
 	}
 
 	if (F->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE)
@@ -176,9 +168,8 @@ std::string FMapFieldStrategy::GetUeTypeName(const google::protobuf::FieldDescri
 		auto Info = FTypeRegistry::GetInfo(std::string(F->message_type()->full_name()));
 		if (Info) return Info->UeTypeName;
 		
-		FGeneratorContext Ctx(nullptr, "");
-		return Ctx.GetSafeUeName(std::string(F->message_type()->full_name()), 'F');
+		return Ctx.NameResolver.GetSafeUeName(std::string(F->message_type()->full_name()), 'F');
 	}
 
-	return "int32"; 
+	return Types::Int32; 
 }

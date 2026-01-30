@@ -5,59 +5,58 @@
 #pragma warning(push)
 #pragma warning(disable: 4800 4125 4668 4541 4946)
 #endif
+#include "EnumFieldStrategy.h"
+#include "../GeneratorContext.h"
+#include "../Config/UEDefinitions.h"
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4800 4125 4668 4541 4946)
+#endif
 
 #include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
 
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
 
-FEnumFieldStrategy::FEnumFieldStrategy(const google::protobuf::FieldDescriptor* InField) : Field(InField) {}
+bool FEnumFieldStrategy::IsRepeated(const google::protobuf::FieldDescriptor* Field) const { return Field->is_repeated(); }
 
-const google::protobuf::FieldDescriptor* FEnumFieldStrategy::GetField() const { return Field; }
-bool FEnumFieldStrategy::IsRepeated() const { return Field->is_repeated(); }
-
-std::string FEnumFieldStrategy::GetCppType() const
+std::string FEnumFieldStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const
 {
-	FGeneratorContext Ctx(nullptr, ""); 
-	return Ctx.GetSafeUeName(std::string(Field->enum_type()->full_name()), 'E');
+	return Ctx.NameResolver.GetSafeUeName(std::string(Field->enum_type()->full_name()), 'E');
 }
 
-void FEnumFieldStrategy::WriteToProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+void FEnumFieldStrategy::WriteRepeatedToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const
 {
-	if (IsRepeated())
+	Ctx.Printer.Print("$utils$::TArrayToRepeatedField($ue$, OutProto.mutable_$proto$());\n", 
+		"utils", UE::Names::Utils::Container, "ue", UeVar, "proto", ProtoVar);
+}
+
+void FEnumFieldStrategy::WriteRepeatedFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const
+{
+	Ctx.Printer.Print("$utils$::RepeatedFieldToTArray(InProto.$proto$(), $ue$);\n", 
+		"utils", UE::Names::Utils::Container, "proto", ProtoVar, "ue", UeVar);
+}
+
+void FEnumFieldStrategy::WriteSingleValueToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeValue, const std::string& ProtoName) const
+{
+	std::string ProtoType = Ctx.NameResolver.GetProtoCppType(Field->enum_type());
+	
+	if (IsRepeated(Field))
 	{
-		Ctx.Writer.Print("FProtobufContainerUtils::TArrayToRepeatedField($ue$, OutProto.mutable_$proto$());\n", 
-			"ue", UeVar, "proto", ProtoVar);
+		Ctx.Printer.Print("OutProto.add_$proto$(static_cast<$type$>($val$));\n", 
+			"proto", ProtoName, "type", ProtoType, "val", UeValue);
 	}
 	else
 	{
-		WriteInnerToProto(Ctx, UeVar, "OutProto.set_" + ProtoVar);
+		Ctx.Printer.Print("OutProto.set_$proto$(static_cast<$type$>($val$));\n", 
+			"proto", ProtoName, "type", ProtoType, "val", UeValue);
 	}
 }
 
-void FEnumFieldStrategy::WriteFromProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+void FEnumFieldStrategy::WriteSingleValueFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeTarget, const std::string& ProtoValue) const
 {
-	if (IsRepeated())
-	{
-		Ctx.Writer.Print("FProtobufContainerUtils::RepeatedFieldToTArray(InProto.$proto$(), $ue$);\n", 
-			"proto", ProtoVar, "ue", UeVar);
-	}
-	else
-	{
-		WriteInnerFromProto(Ctx, UeVar, "InProto." + ProtoVar + "()");
-	}
-}
-
-void FEnumFieldStrategy::WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const
-{
-	std::string ProtoType = Ctx.GetProtoCppType(Field->enum_type());
-	Ctx.Writer.Print("$target$(static_cast<$type$>($val$));\n", "target", ProtoTarget, "type", ProtoType, "val", UeVal);
-}
-
-void FEnumFieldStrategy::WriteInnerFromProto(FGeneratorContext& Ctx, const std::string& UeTarget, const std::string& ProtoVal) const
-{
-	std::string UeType = GetCppType();
-	Ctx.Writer.Print("$target$ = static_cast<$type$>($val$);\n", "target", UeTarget, "type", UeType, "val", ProtoVal);
+	std::string UeType = GetCppType(Field);
+	Ctx.Printer.Print("$target$ = static_cast<$type$>($val$);\n", "target", UeTarget, "type", UeType, "val", ProtoValue);
 }

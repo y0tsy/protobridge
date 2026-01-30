@@ -1,6 +1,7 @@
 ﻿#include "UnrealStrategies.h"
 #include "../GeneratorContext.h"
 #include "../TypeRegistry.h"
+#include "../Config/UEDefinitions.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -8,157 +9,128 @@
 #endif
 
 #include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
 
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
 
-FUnrealStructStrategy::FUnrealStructStrategy(const google::protobuf::FieldDescriptor* InField, const FUnrealTypeInfo* InInfo)
-	: Field(InField), Info(InInfo)
-{
+bool FUnrealStructStrategy::IsRepeated(const google::protobuf::FieldDescriptor* Field) const { return Field->is_repeated(); }
+
+std::string FUnrealStructStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const 
+{ 
+	const FUnrealTypeInfo* Info = FTypeRegistry::GetInfo(std::string(Field->message_type()->full_name()));
+	return Info ? Info->UeTypeName : "FUnknown"; 
 }
 
-const google::protobuf::FieldDescriptor* FUnrealStructStrategy::GetField() const { return Field; }
-bool FUnrealStructStrategy::IsRepeated() const { return Field->is_repeated(); }
-std::string FUnrealStructStrategy::GetCppType() const { return Info->UeTypeName; }
-bool FUnrealStructStrategy::CanBeUProperty() const { return Info->bCanBeUProperty; }
-
-void FUnrealStructStrategy::WriteToProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
-{
-	if (IsRepeated())
-	{
-		std::string UeType = GetCppType();
-		std::string ProtoType = Ctx.GetProtoCppType(Field->message_type());
-		
-		std::string FuncName = Info->UtilityClass + "::" + Info->UtilsFuncPrefix + "ToProto";
-		if (Info->UtilsFuncPrefix == "FDateTime") FuncName = "FProtobufMathUtils::FDateTimeToTimestamp";
-		else if (Info->UtilsFuncPrefix == "FTimespan") FuncName = "FProtobufMathUtils::FTimespanToDuration";
-		else if (Info->UtilsFuncPrefix == "Any") FuncName = "FProtobufReflectionUtils::AnyToProto";
-		
-		std::string ArgPrefix = Info->bIsCustomType ? "" : "*"; 
-		
-		Ctx.Writer.Print("FProtobufContainerUtils::TArrayToRepeatedMessage($ue$, OutProto.mutable_$proto$(), \n", 
-			"ue", UeVar, "proto", ProtoVar);
-		Ctx.Writer.Indent();
-		Ctx.Writer.Print("[](const $uetype$& In, $prototype$* Out) { $func$(In, $arg$Out); });\n", 
-			"uetype", UeType, "prototype", ProtoType, "func", FuncName, "arg", ArgPrefix);
-		Ctx.Writer.Outdent();
-	}
-	else
-	{
-		std::string Target = "OutProto.mutable_" + ProtoVar + "()";
-		WriteInnerToProto(Ctx, UeVar, Target);
-	}
+bool FUnrealStructStrategy::CanBeUProperty(const google::protobuf::FieldDescriptor* Field) const 
+{ 
+	const FUnrealTypeInfo* Info = FTypeRegistry::GetInfo(std::string(Field->message_type()->full_name()));
+	return Info ? Info->bCanBeUProperty : true; 
 }
 
-void FUnrealStructStrategy::WriteFromProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const
+void FUnrealStructStrategy::WriteRepeatedToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const
 {
-	if (IsRepeated())
-	{
-		std::string UeType = GetCppType();
-		std::string ProtoType = Ctx.GetProtoCppType(Field->message_type());
+	const FUnrealTypeInfo* Info = FTypeRegistry::GetInfo(std::string(Field->message_type()->full_name()));
+	if (!Info) return;
 
-		std::string FuncName = Info->UtilityClass + "::ProtoTo" + Info->UtilsFuncPrefix;
-		if (Info->UtilsFuncPrefix == "FDateTime") FuncName = "FProtobufMathUtils::TimestampToFDateTime";
-		else if (Info->UtilsFuncPrefix == "FTimespan") FuncName = "FProtobufMathUtils::DurationToFTimespan";
-		else if (Info->UtilsFuncPrefix == "Any") FuncName = "FProtobufReflectionUtils::ProtoToAny";
-
-		Ctx.Writer.Print("FProtobufContainerUtils::RepeatedMessageToTArray(InProto.$proto$(), $ue$, \n", 
-			"proto", ProtoVar, "ue", UeVar);
-		Ctx.Writer.Indent();
-		Ctx.Writer.Print("[](const $prototype$& In) { return $func$(In); });\n", 
-			"prototype", ProtoType, "func", FuncName);
-		Ctx.Writer.Outdent();
-	}
-	else
-	{
-		if (GetField()->has_presence())
-		{
-			FScopedBlock IfBlock(Ctx.Writer, "if (InProto.has_" + ProtoVar + "())");
-			WriteInnerFromProto(Ctx, UeVar, "InProto." + ProtoVar + "()");
-		}
-		else
-		{
-			WriteInnerFromProto(Ctx, UeVar, "InProto." + ProtoVar + "()");
-		}
-	}
-}
-
-void FUnrealStructStrategy::WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const
-{
+	std::string UeType = GetCppType(Field);
+	std::string ProtoType = Ctx.NameResolver.GetProtoCppType(Field->message_type());
+	
 	std::string FuncName = Info->UtilityClass + "::" + Info->UtilsFuncPrefix + "ToProto";
+	std::string ArgPrefix = Info->bIsCustomType ? "" : "*"; 
 	
-	if (Info->UtilsFuncPrefix == "FDateTime") FuncName = "FProtobufMathUtils::FDateTimeToTimestamp";
-	else if (Info->UtilsFuncPrefix == "FTimespan") FuncName = "FProtobufMathUtils::FTimespanToDuration";
-	else if (Info->UtilsFuncPrefix == "Any") FuncName = "FProtobufReflectionUtils::AnyToProto";
-	
+	Ctx.Printer.Print("$utils$::TArrayToRepeatedMessage($ue$, OutProto.mutable_$proto$(), \n", 
+		"utils", UE::Names::Utils::Container, "ue", UeVar, "proto", ProtoVar);
+	Ctx.Printer.Indent();
+	Ctx.Printer.Print("[](const $uetype$& In, $prototype$* Out) { $func$(In, $arg$Out); });\n", 
+		"uetype", UeType, "prototype", ProtoType, "func", FuncName, "arg", ArgPrefix);
+	Ctx.Printer.Outdent();
+}
+
+void FUnrealStructStrategy::WriteRepeatedFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const
+{
+	const FUnrealTypeInfo* Info = FTypeRegistry::GetInfo(std::string(Field->message_type()->full_name()));
+	if (!Info) return;
+
+	std::string ProtoType = Ctx.NameResolver.GetProtoCppType(Field->message_type());
+	std::string FuncName = Info->UtilityClass + "::ProtoTo" + Info->UtilsFuncPrefix;
+
+	Ctx.Printer.Print("$utils$::RepeatedMessageToTArray(InProto.$proto$(), $ue$, \n", 
+		"utils", UE::Names::Utils::Container, "proto", ProtoVar, "ue", UeVar);
+	Ctx.Printer.Indent();
+	Ctx.Printer.Print("[](const $prototype$& In) { return $func$(In); });\n", 
+		"prototype", ProtoType, "func", FuncName);
+	Ctx.Printer.Outdent();
+}
+
+void FUnrealStructStrategy::WriteSingleValueToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeValue, const std::string& ProtoName) const
+{
+	const FUnrealTypeInfo* Info = FTypeRegistry::GetInfo(std::string(Field->message_type()->full_name()));
+	if (!Info) return;
+
+	std::string FuncName = Info->UtilityClass + "::" + Info->UtilsFuncPrefix + "ToProto";
 	bool bPassAsPointer = Info->bIsCustomType;
 
-	std::string TargetArg;
-	
-	std::string TargetMutable = ProtoTarget;
-	TargetArg = bPassAsPointer ? TargetMutable : "*" + TargetMutable;
+	std::string TargetMutable = IsRepeated(Field) ? "OutProto.add_" + ProtoName + "()" : "OutProto.mutable_" + ProtoName + "()";
+	std::string TargetArg = bPassAsPointer ? TargetMutable : "*" + TargetMutable;
 
-	Ctx.Writer.Print("$func$($val$, $target$);\n", "func", FuncName, "val", UeVal, "target", TargetArg);
+	Ctx.Printer.Print("$func$($val$, $target$);\n", "func", FuncName, "val", UeValue, "target", TargetArg);
 }
 
-void FUnrealStructStrategy::WriteInnerFromProto(FGeneratorContext& Ctx, const std::string& UeTarget, const std::string& ProtoVal) const
+void FUnrealStructStrategy::WriteSingleValueFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeTarget, const std::string& ProtoValue) const
 {
-	std::string FuncName = Info->UtilityClass + "::ProtoTo" + Info->UtilsFuncPrefix;
-	
-	if (Info->UtilsFuncPrefix == "FDateTime") FuncName = "FProtobufMathUtils::TimestampToFDateTime";
-	else if (Info->UtilsFuncPrefix == "FTimespan") FuncName = "FProtobufMathUtils::DurationToFTimespan";
-	else if (Info->UtilsFuncPrefix == "Any") FuncName = "FProtobufReflectionUtils::ProtoToAny";
+	const FUnrealTypeInfo* Info = FTypeRegistry::GetInfo(std::string(Field->message_type()->full_name()));
+	if (!Info) return;
 
-	Ctx.Writer.Print("$target$ = $func$($val$);\n", "target", UeTarget, "func", FuncName, "val", ProtoVal);
+	std::string FuncName = Info->UtilityClass + "::ProtoTo" + Info->UtilsFuncPrefix;
+	Ctx.Printer.Print("$target$ = $func$($val$);\n", "target", UeTarget, "func", FuncName, "val", ProtoValue);
 }
 
-FUnrealJsonStrategy::FUnrealJsonStrategy(const google::protobuf::FieldDescriptor* InField) : Field(InField) {}
+bool FUnrealJsonStrategy::IsRepeated(const google::protobuf::FieldDescriptor* Field) const { return Field->is_repeated(); }
 
-const google::protobuf::FieldDescriptor* FUnrealJsonStrategy::GetField() const { return Field; }
-bool FUnrealJsonStrategy::IsRepeated() const { return Field->is_repeated(); }
-
-std::string FUnrealJsonStrategy::GetCppType() const 
+std::string FUnrealJsonStrategy::GetCppType(const google::protobuf::FieldDescriptor* Field) const 
 { 
 	std::string FullName = std::string(Field->message_type()->full_name());
-	if (FullName == "google.protobuf.Struct") return "TSharedPtr<FJsonObject>";
-	if (FullName == "google.protobuf.ListValue") return "TArray<TSharedPtr<FJsonValue>>";
-	return "TSharedPtr<FJsonValue>"; 
+	namespace Types = UE::Names::Types;
+	if (FullName == "google.protobuf.Struct") return std::string(Types::TSharedPtr) + "<" + Types::FJsonObject + ">";
+	if (FullName == "google.protobuf.ListValue") return std::string(Types::TArray) + "<" + Types::TSharedPtr + "<" + Types::FJsonValue + ">>";
+	return std::string(Types::TSharedPtr) + "<" + Types::FJsonValue + ">"; 
 }
 
-bool FUnrealJsonStrategy::CanBeUProperty() const { return false; }
+bool FUnrealJsonStrategy::CanBeUProperty(const google::protobuf::FieldDescriptor* Field) const { return false; }
 
-void FUnrealJsonStrategy::WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const
+void FUnrealJsonStrategy::WriteSingleValueToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeValue, const std::string& ProtoName) const
 {
 	std::string FullName = std::string(Field->message_type()->full_name());
 	std::string FuncName;
 	
-	if (FullName == "google.protobuf.Struct") FuncName = "FProtobufStructUtils::JsonObjectToProtoStruct";
-	else if (FullName == "google.protobuf.ListValue") FuncName = "FProtobufStructUtils::JsonListToProto";
-	else FuncName = "FProtobufStructUtils::JsonValueToProtoValue";
+	if (FullName == "google.protobuf.Struct") FuncName = std::string(UE::Names::Utils::Struct) + "::JsonObjectToProtoStruct";
+	else if (FullName == "google.protobuf.ListValue") FuncName = std::string(UE::Names::Utils::Struct) + "::JsonListToProto";
+	else FuncName = std::string(UE::Names::Utils::Struct) + "::JsonValueToProtoValue";
 
-	Ctx.Writer.Print("{\n");
-	Ctx.Writer.Indent();
-	Ctx.Writer.Print("FProtoSerializationContext Ctx;\n");
-	Ctx.Writer.Print("$func$($val$, *$target$, Ctx);\n", "func", FuncName, "val", UeVal, "target", ProtoTarget);
-	Ctx.Writer.Outdent();
-	Ctx.Writer.Print("}\n");
+	std::string Target = IsRepeated(Field) ? "OutProto.add_" + ProtoName + "()" : "OutProto.mutable_" + ProtoName + "()";
+
+	Ctx.Printer.Print("{\n");
+	Ctx.Printer.Indent();
+	Ctx.Printer.Print("FProtoSerializationContext Ctx;\n");
+	Ctx.Printer.Print("$func$($val$, *$target$, Ctx);\n", "func", FuncName, "val", UeValue, "target", Target);
+	Ctx.Printer.Outdent();
+	Ctx.Printer.Print("}\n");
 }
 
-void FUnrealJsonStrategy::WriteInnerFromProto(FGeneratorContext& Ctx, const std::string& UeTarget, const std::string& ProtoVal) const
+void FUnrealJsonStrategy::WriteSingleValueFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeTarget, const std::string& ProtoValue) const
 {
 	std::string FullName = std::string(Field->message_type()->full_name());
 	std::string FuncName;
 	
-	if (FullName == "google.protobuf.Struct") FuncName = "FProtobufStructUtils::ProtoStructToJsonObject";
-	else if (FullName == "google.protobuf.ListValue") FuncName = "FProtobufStructUtils::ProtoToJsonList";
-	else FuncName = "FProtobufStructUtils::ProtoValueToJsonValue";
+	if (FullName == "google.protobuf.Struct") FuncName = std::string(UE::Names::Utils::Struct) + "::ProtoStructToJsonObject";
+	else if (FullName == "google.protobuf.ListValue") FuncName = std::string(UE::Names::Utils::Struct) + "::ProtoToJsonList";
+	else FuncName = std::string(UE::Names::Utils::Struct) + "::ProtoValueToJsonValue";
 
-	Ctx.Writer.Print("{\n");
-	Ctx.Writer.Indent();
-	Ctx.Writer.Print("FProtoSerializationContext Ctx;\n");
-	Ctx.Writer.Print("$target$ = $func$($val$, Ctx);\n", "target", UeTarget, "func", FuncName, "val", ProtoVal);
-	Ctx.Writer.Outdent();
-	Ctx.Writer.Print("}\n");
+	Ctx.Printer.Print("{\n");
+	Ctx.Printer.Indent();
+	Ctx.Printer.Print("FProtoSerializationContext Ctx;\n");
+	Ctx.Printer.Print("$target$ = $func$($val$, Ctx);\n", "target", UeTarget, "func", FuncName, "val", ProtoValue);
+	Ctx.Printer.Outdent();
+	Ctx.Printer.Print("}\n");
 }

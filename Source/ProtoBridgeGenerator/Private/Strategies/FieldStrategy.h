@@ -16,19 +16,21 @@ class IFieldStrategy
 public:
 	virtual ~IFieldStrategy() = default;
 
-	virtual std::string GetCppType() const = 0;
-	virtual bool IsRepeated() const;
-	virtual bool CanBeUProperty() const;
+	virtual std::string GetCppType(const google::protobuf::FieldDescriptor* Field) const = 0;
+	virtual bool IsRepeated(const google::protobuf::FieldDescriptor* Field) const;
+	virtual bool CanBeUProperty(const google::protobuf::FieldDescriptor* Field) const;
 
-	virtual void WriteDeclaration(FGeneratorContext& Ctx) const;
-	virtual void WriteToProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const;
-	virtual void WriteFromProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const;
+	virtual void WriteDeclaration(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field) const;
+	
+	virtual void WriteToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const;
+	virtual void WriteFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const;
 
 protected:
-	virtual const google::protobuf::FieldDescriptor* GetField() const = 0;
-	
-	virtual void WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const = 0;
-	virtual void WriteInnerFromProto(FGeneratorContext& Ctx, const std::string& UeTarget, const std::string& ProtoVal) const = 0;
+	virtual void WriteRepeatedToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const;
+	virtual void WriteRepeatedFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const;
+
+	virtual void WriteSingleValueToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeValue, const std::string& ProtoName) const = 0;
+	virtual void WriteSingleValueFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeTarget, const std::string& ProtoValue) const = 0;
 
 	static void PrintBlockComment(FGeneratorContext& Ctx, const google::protobuf::SourceLocation& Location);
 	std::string GetUESpecifiers(const google::protobuf::SourceLocation& Location) const;

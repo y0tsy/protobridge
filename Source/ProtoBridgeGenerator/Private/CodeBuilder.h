@@ -1,6 +1,9 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <type_traits>
+#include <utility>
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -13,54 +16,54 @@
 #pragma warning(pop)
 #endif
 
-class FCodeWriter
+class FCodePrinter
 {
 public:
-	explicit FCodeWriter(google::protobuf::io::Printer* InPrinter);
+	explicit FCodePrinter(google::protobuf::io::Printer* InPrinter);
 
 	void Print(const char* Text);
 	
 	template<typename... Args>
 	void Print(const char* Format, Args&&... args)
 	{
-		P->Print(Format, std::forward<Args>(args)...);
+		Printer->Print(Format, std::forward<Args>(args)...);
 	}
 
 	void Indent();
 	void Outdent();
 
 private:
-	google::protobuf::io::Printer* P;
+	google::protobuf::io::Printer* Printer;
 };
 
 class FScopedBlock
 {
 public:
-	FScopedBlock(FCodeWriter& InWriter, const std::string& Header = "", const std::string& Suffix = "}");
+	FScopedBlock(FCodePrinter& InPrinter, const std::string& Header = "", const std::string& Suffix = "}");
 	virtual ~FScopedBlock();
 
 	FScopedBlock(const FScopedBlock&) = delete;
 	FScopedBlock& operator=(const FScopedBlock&) = delete;
 
 private:
-	FCodeWriter& Writer;
+	FCodePrinter& Printer;
 	std::string EndSuffix;
 };
 
 class FScopedClass : public FScopedBlock
 {
 public:
-	FScopedClass(FCodeWriter& InWriter, const std::string& Header);
+	FScopedClass(FCodePrinter& InPrinter, const std::string& Header);
 };
 
 class FScopedSwitch : public FScopedBlock
 {
 public:
-	FScopedSwitch(FCodeWriter& InWriter, const std::string& Condition);
+	FScopedSwitch(FCodePrinter& InPrinter, const std::string& Condition);
 };
 
 class FScopedNamespace : public FScopedBlock
 {
 public:
-	FScopedNamespace(FCodeWriter& InWriter, const std::string& Name);
+	FScopedNamespace(FCodePrinter& InPrinter, const std::string& Name);
 };

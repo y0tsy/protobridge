@@ -4,19 +4,13 @@
 class FMessageFieldStrategy : public IFieldStrategy
 {
 public:
-	FMessageFieldStrategy(const google::protobuf::FieldDescriptor* InField);
-
-	virtual const google::protobuf::FieldDescriptor* GetField() const override;
-	virtual bool IsRepeated() const override;
-	virtual std::string GetCppType() const override;
-
-	virtual void WriteToProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const override;
-	virtual void WriteFromProto(FGeneratorContext& Ctx, const std::string& UeVar, const std::string& ProtoVar) const override;
+	virtual bool IsRepeated(const google::protobuf::FieldDescriptor* Field) const override;
+	virtual std::string GetCppType(const google::protobuf::FieldDescriptor* Field) const override;
 
 protected:
-	virtual void WriteInnerToProto(FGeneratorContext& Ctx, const std::string& UeVal, const std::string& ProtoTarget) const override;
-	virtual void WriteInnerFromProto(FGeneratorContext& Ctx, const std::string& UeTarget, const std::string& ProtoVal) const override;
+	virtual void WriteRepeatedToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const override;
+	virtual void WriteRepeatedFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeVar, const std::string& ProtoVar) const override;
 
-private:
-	const google::protobuf::FieldDescriptor* Field;
+	virtual void WriteSingleValueToProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeValue, const std::string& ProtoName) const override;
+	virtual void WriteSingleValueFromProto(FGeneratorContext& Ctx, const google::protobuf::FieldDescriptor* Field, const std::string& UeTarget, const std::string& ProtoValue) const override;
 };

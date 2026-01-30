@@ -1,6 +1,7 @@
 #pragma once
 
 class FGeneratorContext;
+class FStrategyPool;
 namespace google {
     namespace protobuf {
         class Descriptor;
@@ -10,6 +11,6 @@ namespace google {
 class FMessageGenerator
 {
 public:
-    static void GenerateHeader(FGeneratorContext& Ctx, const google::protobuf::Descriptor* Message);
-    static void GenerateSource(FGeneratorContext& Ctx, const google::protobuf::Descriptor* Message);
+    static void GenerateHeader(FGeneratorContext& Ctx, const google::protobuf::Descriptor* Message, const FStrategyPool& Pool);
+    static void GenerateSource(FGeneratorContext& Ctx, const google::protobuf::Descriptor* Message, const FStrategyPool& Pool);
 };

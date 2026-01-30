@@ -1,6 +1,8 @@
 ﻿#include "UECodeGenerator.h"
 #include "GeneratorContext.h"
-#include "DependencySorter.h"
+#include "Utils/DependencySorter.h"
+#include "Config/UEDefinitions.h"
+#include "Strategies/StrategyPool.h"
 #include "Generators/EnumGenerator.h"
 #include "Generators/MessageGenerator.h"
 #include "Generators/ProtoLibraryGenerator.h"
@@ -31,21 +33,31 @@ bool FUeCodeGenerator::Generate(const google::protobuf::FileDescriptor* File,
 	std::string BaseName = GetFileNameWithoutExtension(std::string(File->name()));
 	FGeneratorContext::Log("Processing File: " + std::string(File->name()));
 	
-	FGeneratorContext Ctx(nullptr, Parameter.empty() ? "" : Parameter + " ");
-	std::vector<const google::protobuf::Descriptor*> SortedMessages = FDependencySorter::Sort(File);
-
+	try
 	{
-		std::unique_ptr<google::protobuf::io::ZeroCopyOutputStream> HeaderOutput(Context->Open(BaseName + ".ue.h"));
-		google::protobuf::io::Printer HeaderPrinter(HeaderOutput.get(), '$');
-		Ctx.Writer = FCodeWriter(&HeaderPrinter);
-		GenerateHeader(File, BaseName, Ctx, SortedMessages);
+		std::vector<const google::protobuf::Descriptor*> SortedMessages = FDependencySorter::Sort(File);
+		
+		FGeneratorContext Ctx(nullptr, Parameter.empty() ? "" : Parameter + " ");
+		FStrategyPool StrategyPool;
+
+		{
+			std::unique_ptr<google::protobuf::io::ZeroCopyOutputStream> HeaderOutput(Context->Open(BaseName + ".ue.h"));
+			google::protobuf::io::Printer HeaderPrinter(HeaderOutput.get(), '$');
+			Ctx.Printer = FCodePrinter(&HeaderPrinter);
+			GenerateHeader(File, BaseName, Ctx, SortedMessages, StrategyPool);
+		}
+
+		{
+			std::unique_ptr<google::protobuf::io::ZeroCopyOutputStream> SourceOutput(Context->Open(BaseName + ".ue.cpp"));
+			google::protobuf::io::Printer SourcePrinter(SourceOutput.get(), '$');
+			Ctx.Printer = FCodePrinter(&SourcePrinter);
+			GenerateSource(File, BaseName, Ctx, SortedMessages, StrategyPool);
+		}
 	}
-
+	catch (const std::exception& e)
 	{
-		std::unique_ptr<google::protobuf::io::ZeroCopyOutputStream> SourceOutput(Context->Open(BaseName + ".ue.cpp"));
-		google::protobuf::io::Printer SourcePrinter(SourceOutput.get(), '$');
-		Ctx.Writer = FCodeWriter(&SourcePrinter);
-		GenerateSource(File, BaseName, Ctx, SortedMessages);
+		*Error = std::string("Unreal Protobuf Plugin Error: ") + e.what();
+		return false;
 	}
 
 	return true;
@@ -58,16 +70,16 @@ std::string FUeCodeGenerator::GetFileNameWithoutExtension(const std::string& Fil
 	return FileName.substr(0, LastDot);
 }
 
-void FUeCodeGenerator::GenerateHeader(const google::protobuf::FileDescriptor* File, const std::string& BaseName, FGeneratorContext& Ctx, const std::vector<const google::protobuf::Descriptor*>& Messages) const
+void FUeCodeGenerator::GenerateHeader(const google::protobuf::FileDescriptor* File, const std::string& BaseName, FGeneratorContext& Ctx, const std::vector<const google::protobuf::Descriptor*>& Messages, const FStrategyPool& Pool) const
 {
-	Ctx.Writer.Print("#pragma once\n\n");
-	Ctx.Writer.Print("#include \"CoreMinimal.h\"\n");
-	Ctx.Writer.Print("#include \"GameplayTagContainer.h\"\n");
-	Ctx.Writer.Print("#include \"UObject/SoftObjectPath.h\"\n");
-	Ctx.Writer.Print("#include \"Kismet/BlueprintFunctionLibrary.h\"\n");
-	Ctx.Writer.Print("#include \"Dom/JsonObject.h\"\n");
-	Ctx.Writer.Print("#include \"Dom/JsonValue.h\"\n");
-	Ctx.Writer.Print("#include \"ProtobufAny.h\"\n");
+	Ctx.Printer.Print("#pragma once\n\n");
+	Ctx.Printer.Print("#include \"CoreMinimal.h\"\n");
+	Ctx.Printer.Print("#include \"GameplayTagContainer.h\"\n");
+	Ctx.Printer.Print("#include \"UObject/SoftObjectPath.h\"\n");
+	Ctx.Printer.Print("#include \"Kismet/BlueprintFunctionLibrary.h\"\n");
+	Ctx.Printer.Print("#include \"Dom/JsonObject.h\"\n");
+	Ctx.Printer.Print("#include \"Dom/JsonValue.h\"\n");
+	Ctx.Printer.Print("#include \"ProtobufAny.h\"\n");
 
 	for (int i = 0; i < File->dependency_count(); ++i)
 	{
@@ -75,22 +87,22 @@ void FUeCodeGenerator::GenerateHeader(const google::protobuf::FileDescriptor* Fi
 		if (DepFileName.find("google/protobuf/") != std::string::npos) continue;
 		
 		std::string DepName = GetFileNameWithoutExtension(DepFileName);
-		Ctx.Writer.Print("#include \"$name$.ue.h\"\n", "name", DepName);
+		Ctx.Printer.Print("#include \"$name$.ue.h\"\n", "name", DepName);
 	}
 
-	Ctx.Writer.Print("\n#if defined(_MSC_VER)\n#pragma warning(push)\n#pragma warning(disable: 4800 4125 4668 4541 4946 4715)\n#endif\n");
-	Ctx.Writer.Print("#pragma push_macro(\"check\")\n#undef check\n");
-	Ctx.Writer.Print("#pragma push_macro(\"verify\")\n#undef verify\n");
-	Ctx.Writer.Print("#pragma push_macro(\"TEXT\")\n#undef TEXT\n");
+	Ctx.Printer.Print("\n#if defined(_MSC_VER)\n#pragma warning(push)\n#pragma warning(disable: 4800 4125 4668 4541 4946 4715)\n#endif\n");
+	Ctx.Printer.Print("#pragma push_macro(\"check\")\n#undef check\n");
+	Ctx.Printer.Print("#pragma push_macro(\"verify\")\n#undef verify\n");
+	Ctx.Printer.Print("#pragma push_macro(\"TEXT\")\n#undef TEXT\n");
 	
-	Ctx.Writer.Print("#include \"$filename$.pb.h\"\n", "filename", BaseName);
+	Ctx.Printer.Print("#include \"$filename$.pb.h\"\n", "filename", BaseName);
 	
-	Ctx.Writer.Print("#pragma pop_macro(\"TEXT\")\n");
-	Ctx.Writer.Print("#pragma pop_macro(\"verify\")\n");
-	Ctx.Writer.Print("#pragma pop_macro(\"check\")\n");
-	Ctx.Writer.Print("#if defined(_MSC_VER)\n#pragma warning(pop)\n#endif\n\n");
+	Ctx.Printer.Print("#pragma pop_macro(\"TEXT\")\n");
+	Ctx.Printer.Print("#pragma pop_macro(\"verify\")\n");
+	Ctx.Printer.Print("#pragma pop_macro(\"check\")\n");
+	Ctx.Printer.Print("#if defined(_MSC_VER)\n#pragma warning(pop)\n#endif\n\n");
 
-	Ctx.Writer.Print("#include \"$filename$.ue.generated.h\"\n\n", "filename", BaseName);
+	Ctx.Printer.Print("#include \"$filename$.ue.generated.h\"\n\n", "filename", BaseName);
 
 	for (int i = 0; i < File->enum_type_count(); ++i)
 	{
@@ -99,30 +111,30 @@ void FUeCodeGenerator::GenerateHeader(const google::protobuf::FileDescriptor* Fi
 
 	for (const google::protobuf::Descriptor* Msg : Messages)
 	{
-		FMessageGenerator::GenerateHeader(Ctx, Msg);
+		FMessageGenerator::GenerateHeader(Ctx, Msg, Pool);
 	}
 
 	FProtoLibraryGenerator::GenerateHeader(Ctx, BaseName, Messages);
 }
 
-void FUeCodeGenerator::GenerateSource(const google::protobuf::FileDescriptor* File, const std::string& BaseName, FGeneratorContext& Ctx, const std::vector<const google::protobuf::Descriptor*>& Messages) const
+void FUeCodeGenerator::GenerateSource(const google::protobuf::FileDescriptor* File, const std::string& BaseName, FGeneratorContext& Ctx, const std::vector<const google::protobuf::Descriptor*>& Messages, const FStrategyPool& Pool) const
 {
-	Ctx.Writer.Print("#include \"$name$.ue.h\"\n", "name", BaseName);
-	Ctx.Writer.Print("#include \"ProtobufStringUtils.h\"\n");
-	Ctx.Writer.Print("#include \"ProtobufMathUtils.h\"\n");
-	Ctx.Writer.Print("#include \"ProtobufStructUtils.h\"\n");
-	Ctx.Writer.Print("#include \"ProtobufReflectionUtils.h\"\n");
-	Ctx.Writer.Print("#include \"ProtobufContainerUtils.h\"\n");
+	Ctx.Printer.Print("#include \"$name$.ue.h\"\n", "name", BaseName);
+	Ctx.Printer.Print("#include \"ProtobufStringUtils.h\"\n");
+	Ctx.Printer.Print("#include \"ProtobufMathUtils.h\"\n");
+	Ctx.Printer.Print("#include \"ProtobufStructUtils.h\"\n");
+	Ctx.Printer.Print("#include \"ProtobufReflectionUtils.h\"\n");
+	Ctx.Printer.Print("#include \"ProtobufContainerUtils.h\"\n");
 	
-	Ctx.Writer.Print("\n#pragma warning(push)\n");
-	Ctx.Writer.Print("#pragma warning(disable: 4800 4125 4668 4541 4946 4715)\n\n");
+	Ctx.Printer.Print("\n#pragma warning(push)\n");
+	Ctx.Printer.Print("#pragma warning(disable: 4800 4125 4668 4541 4946 4715)\n\n");
 	
 	for (const google::protobuf::Descriptor* Msg : Messages)
 	{
-		FMessageGenerator::GenerateSource(Ctx, Msg);
+		FMessageGenerator::GenerateSource(Ctx, Msg, Pool);
 	}
 
 	FProtoLibraryGenerator::GenerateSource(Ctx, BaseName, Messages);
 	
-	Ctx.Writer.Print("\n#pragma warning(pop)\n");
+	Ctx.Printer.Print("\n#pragma warning(pop)\n");
 }

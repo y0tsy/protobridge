@@ -1,5 +1,6 @@
 ﻿#include "EnumGenerator.h"
 #include "../GeneratorContext.h"
+#include "../Config/UEDefinitions.h"
 #include <string>
 
 #ifdef _MSC_VER
@@ -15,7 +16,7 @@
 
 void FEnumGenerator::Generate(FGeneratorContext& Ctx, const google::protobuf::EnumDescriptor* Enum)
 {
-	std::string Name = Ctx.GetSafeUeName(std::string(Enum->full_name()), 'E');
+	std::string Name = Ctx.NameResolver.GetSafeUeName(std::string(Enum->full_name()), 'E');
 	bool bCanBeBlueprintType = true;
 	
 	for (int i = 0; i < Enum->value_count(); ++i)
@@ -31,19 +32,22 @@ void FEnumGenerator::Generate(FGeneratorContext& Ctx, const google::protobuf::En
 	google::protobuf::SourceLocation Loc;
 	if (Enum->GetSourceLocation(&Loc)) 
 	{
-		FGeneratorContext::SanitizeTooltip(Loc.leading_comments); 
+		std::string Tooltip = Ctx.NameResolver.SanitizeTooltip(Loc.leading_comments);
+		if (!Tooltip.empty())
+		{
+			Ctx.Printer.Print("/** $c$ */\n", "c", Tooltip);
+		}
 	}
 
 	if (bCanBeBlueprintType)
 	{
-		Ctx.Writer.Print("UENUM(BlueprintType)\n");
-		
-		FScopedClass EnumScope(Ctx.Writer, "enum class " + Name + " : uint8");
+		Ctx.Printer.Print("$macro$($spec$)\n", "macro", UE::Names::Macros::UENUM, "spec", UE::Names::Specifiers::BlueprintType);
+		FScopedClass EnumScope(Ctx.Printer, "enum class " + Name + " : " + UE::Names::Types::Uint8);
 		GenerateValues(Ctx, Enum, true);
 	}
 	else
 	{
-		FScopedClass EnumScope(Ctx.Writer, "enum class " + Name + " : int32");
+		FScopedClass EnumScope(Ctx.Printer, "enum class " + Name + " : " + UE::Names::Types::Int32);
 		GenerateValues(Ctx, Enum, false);
 	}
 }
@@ -53,23 +57,23 @@ void FEnumGenerator::GenerateValues(FGeneratorContext& Ctx, const google::protob
 	for (int i = 0; i < Enum->value_count(); ++i)
 	{
 		const google::protobuf::EnumValueDescriptor* Value = Enum->value(i);
-		std::string ValName = Ctx.ToPascalCase(std::string(Value->name()));
+		std::string ValName = Ctx.NameResolver.ToPascalCase(std::string(Value->name()));
 		
 		google::protobuf::SourceLocation ValLoc;
 		Value->GetSourceLocation(&ValLoc);
-		std::string Tooltip = FGeneratorContext::SanitizeTooltip(ValLoc.leading_comments + ValLoc.trailing_comments);
+		std::string Tooltip = Ctx.NameResolver.SanitizeTooltip(ValLoc.leading_comments + ValLoc.trailing_comments);
 		
-		Ctx.Writer.Print("$name$ = $num$", "name", ValName, "num", std::to_string(Value->number()));
+		Ctx.Printer.Print("$name$ = $num$", "name", ValName, "num", std::to_string(Value->number()));
 
 		if (bIsBlueprintType)
 		{
-			Ctx.Writer.Print(" UMETA(DisplayName = \"$name$\"", "name", ValName);
+			Ctx.Printer.Print(" $meta$($disp$ = \"$name$\"", "meta", UE::Names::Macros::UMETA, "disp", UE::Names::Specifiers::DisplayName, "name", ValName);
 			if (!Tooltip.empty()) 
 			{
-				Ctx.Writer.Print(", Tooltip = \"$c$\"", "c", Tooltip);
+				Ctx.Printer.Print(", $tt$ = \"$c$\"", "tt", UE::Names::Specifiers::Tooltip, "c", Tooltip);
 			}
-			Ctx.Writer.Print(")");
+			Ctx.Printer.Print(")");
 		}
-		Ctx.Writer.Print(",\n");
+		Ctx.Printer.Print(",\n");
 	}
 }

@@ -1,17 +1,16 @@
 #pragma once
 
-#include <memory>
-
 namespace google {
-namespace protobuf {
-	class FieldDescriptor;
-}
+	namespace protobuf {
+		class FieldDescriptor;
+	}
 }
 
 class IFieldStrategy;
+class FStrategyPool;
 
 class FFieldStrategyFactory
 {
 public:
-	static std::unique_ptr<IFieldStrategy> Create(const google::protobuf::FieldDescriptor* Field);
+	static const IFieldStrategy* GetStrategy(const google::protobuf::FieldDescriptor* Field, const FStrategyPool& Pool);
 };
