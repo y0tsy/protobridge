@@ -15,7 +15,7 @@ struct PROTOBRIDGEEDITOR_API FProtoBridgeDefs
 	inline static const FString ProtoExtension = TEXT("proto");
 	inline static const FString SourceFolder = TEXT("Source");
 	inline static const FString ThirdPartyFolder = TEXT("ProtoBridgeThirdParty");
-	inline static const FString StandardIncludeFolder = TEXT("include");
+	inline static const FString StandardIncludeFolder = TEXT("includes");
 	inline static const FString BinFolder = TEXT("bin");
 	inline static const FString TempFolder = TEXT("Temp");
 	inline static const FString ProtoWildcard = TEXT("*.proto");

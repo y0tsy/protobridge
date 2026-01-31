@@ -34,7 +34,7 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 	
 	SB << TEXT("--proto_path=") << SafeSourceDir << TEXT("\n");
 	
-	const FString StandardIncludePath = FBinaryLocator::FindStandardIncludePath(ProtocPath);
+	const FString StandardIncludePath = FBinaryLocator::FindStandardIncludePath(Config.Environment);
 	if (!StandardIncludePath.IsEmpty())
 	{
 		FString SafeStandardIncludePath = StandardIncludePath;

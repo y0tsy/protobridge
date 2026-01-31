@@ -8,7 +8,7 @@ class FBinaryLocator
 public:
 	static FString ResolveProtocPath(const FProtoBridgeEnvironmentContext& Context);
 	static FString ResolvePluginPath(const FProtoBridgeEnvironmentContext& Context);
-	static FString FindStandardIncludePath(const FString& ProtocPath);
+	static FString FindStandardIncludePath(const FProtoBridgeEnvironmentContext& Context);
 
 private:
 	static FString FindBinaryPath(const FString& BaseDir, const FString& BinaryName);

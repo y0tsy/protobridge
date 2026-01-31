@@ -3,6 +3,7 @@
 #include "ProtoBridgeDefs.h"
 #include "HAL/FileManager.h"
 #include "Misc/StringBuilder.h"
+#include "Misc/Paths.h"
 
 FString FBinaryLocator::ResolveProtocPath(const FProtoBridgeEnvironmentContext& Context)
 {
@@ -30,29 +31,34 @@ FString FBinaryLocator::ResolvePluginPath(const FProtoBridgeEnvironmentContext& 
 	return FindBinaryPath(Context.PluginDirectory, FProtoBridgeDefs::PluginExecutableName);
 }
 
-FString FBinaryLocator::FindStandardIncludePath(const FString& ProtocPath)
+FString FBinaryLocator::FindStandardIncludePath(const FProtoBridgeEnvironmentContext& Context)
 {
-	if (ProtocPath.IsEmpty() || !IFileManager::Get().FileExists(*ProtocPath))
-	{
-		return FString();
-	}
+	FString IncludePath = FPaths::Combine(
+		Context.PluginDirectory, 
+		FProtoBridgeDefs::SourceFolder, 
+		FProtoBridgeDefs::ThirdPartyFolder, 
+		FProtoBridgeDefs::StandardIncludeFolder
+	);
 
-	const FString ProtocDir = FPaths::GetPath(ProtocPath);
-	FString IncludePath = FPaths::Combine(ProtocDir, TEXT("../"), FProtoBridgeDefs::StandardIncludeFolder);
-
+	FPaths::NormalizeDirectoryName(IncludePath);
 	FPaths::CollapseRelativeDirectories(IncludePath);
-	FPaths::NormalizeDirectoryName(IncludePath);
 
 	if (IFileManager::Get().DirectoryExists(*IncludePath))
 	{
 		return IncludePath;
 	}
 
-	IncludePath = FPaths::Combine(ProtocDir, FProtoBridgeDefs::StandardIncludeFolder);
-	FPaths::NormalizeDirectoryName(IncludePath);
-	if (IFileManager::Get().DirectoryExists(*IncludePath))
+	const FString ProtocPath = ResolveProtocPath(Context);
+	if (!ProtocPath.IsEmpty())
 	{
-		return IncludePath;
+		const FString ProtocDir = FPaths::GetPath(ProtocPath);
+		FString FallbackPath = FPaths::Combine(ProtocDir, TEXT("../"), TEXT("include"));
+		FPaths::CollapseRelativeDirectories(FallbackPath);
+		
+		if (IFileManager::Get().DirectoryExists(*FallbackPath))
+		{
+			return FallbackPath;
+		}
 	}
 
 	return FString();
