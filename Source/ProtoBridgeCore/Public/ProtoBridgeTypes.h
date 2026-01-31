@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Misc/Variant.h"
 
+#include "ProtoBridgeTypes.generated.h"
+
 namespace google {
 	namespace protobuf {
 		class Value;
