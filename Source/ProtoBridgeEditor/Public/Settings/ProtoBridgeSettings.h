@@ -10,6 +10,9 @@ struct FProtoBridgeMapping
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, Category = "Config")
+	bool bActive = true;
+
+	UPROPERTY(EditAnywhere, Category = "Config")
 	FDirectoryPath SourcePath;
 
 	UPROPERTY(EditAnywhere, Category = "Config")
@@ -18,6 +21,12 @@ struct FProtoBridgeMapping
 	UPROPERTY(EditAnywhere, Category = "Config")
 	bool bRecursive = true;
 	
+	UPROPERTY(EditAnywhere, Category = "Config")
+	FString ApiMacro;
+
+	UPROPERTY(EditAnywhere, Category = "Config")
+	FString AdditionalArguments;
+
 	UPROPERTY(EditAnywhere, Category = "Config")
 	TArray<FString> ExcludePatterns;
 };
@@ -40,7 +49,7 @@ public:
 	FFilePath CustomPluginPath;
 
 	UPROPERTY(Config, EditAnywhere, Category = "ProtoBridge | Generator")
-	FString ApiMacroName;
+	FString DefaultApiMacroName;
 
 	UPROPERTY(Config, EditAnywhere, Category = "ProtoBridge | Performance")
 	double TimeoutSeconds;

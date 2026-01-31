@@ -89,7 +89,7 @@ void FProtoBridgeEditorModule::OnCompileButtonClicked()
 		Config.Environment.ProtocPath = Settings->CustomProtocPath.FilePath;
 		Config.Environment.PluginPath = Settings->CustomPluginPath.FilePath;
 		Config.Mappings = Settings->Mappings;
-		Config.ApiMacro = Settings->ApiMacroName;
+		Config.ApiMacro = Settings->DefaultApiMacroName;
 		Config.TimeoutSeconds = Settings->TimeoutSeconds;
 		Config.MaxConcurrentProcesses = Settings->MaxConcurrentProcesses;
 

@@ -11,16 +11,19 @@ bool FConfigurationValidator::ValidateSettings(const FProtoBridgeConfiguration& 
 	{
 		if (!IsMacroNameSafe(Config.ApiMacro))
 		{
-			OutDiagnostics.Emplace(ELogVerbosity::Error, FString::Printf(TEXT("Unsafe API macro name: %s"), *Config.ApiMacro));
+			OutDiagnostics.Emplace(ELogVerbosity::Error, FString::Printf(TEXT("Unsafe Global API macro name: %s"), *Config.ApiMacro));
 			bResult = false;
 		}
 	}
 
 	for (const FProtoBridgeMapping& Mapping : Config.Mappings)
 	{
-		if (!ValidateMapping(Mapping, Config.Environment, OutDiagnostics))
+		if (Mapping.bActive)
 		{
-			bResult = false;
+			if (!ValidateMapping(Mapping, Config.Environment, OutDiagnostics))
+			{
+				bResult = false;
+			}
 		}
 	}
 
@@ -38,6 +41,15 @@ bool FConfigurationValidator::ValidateMapping(const FProtoBridgeMapping& Mapping
 	}
 
 	bool bValid = true;
+
+	if (!Mapping.ApiMacro.IsEmpty())
+	{
+		if (!IsMacroNameSafe(Mapping.ApiMacro))
+		{
+			OutDiagnostics.Emplace(ELogVerbosity::Error, FString::Printf(TEXT("Unsafe Mapping API macro name: %s"), *Mapping.ApiMacro));
+			bValid = false;
+		}
+	}
 
 	if (!IsPathSafe(Source, Context))
 	{

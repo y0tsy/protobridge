@@ -42,9 +42,15 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 		SB << TEXT("--proto_path=") << SafeStandardIncludePath << TEXT("\n");
 	}
 
-	if (!Config.ApiMacro.IsEmpty())
+	FString TargetApiMacro = Mapping.ApiMacro.IsEmpty() ? Config.ApiMacro : Mapping.ApiMacro;
+	if (!TargetApiMacro.IsEmpty())
 	{
-		SB << TEXT("--ue_opt=dllexport_macro=") << Config.ApiMacro << TEXT("\n");
+		SB << TEXT("--ue_opt=dllexport_macro=") << TargetApiMacro << TEXT("\n");
+	}
+
+	if (!Mapping.AdditionalArguments.IsEmpty())
+	{
+		SB << Mapping.AdditionalArguments << TEXT("\n");
 	}
 
 	for (const FString& File : Files)

@@ -46,6 +46,11 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 			break;
 		}
 
+		if (!Mapping.bActive)
+		{
+			continue;
+		}
+
 		FString Source = FPathTokenResolver::ResolvePath(Mapping.SourcePath.Path, Config.Environment);
 		FString Dest = FPathTokenResolver::ResolvePath(Mapping.DestinationPath.Path, Config.Environment);
 
