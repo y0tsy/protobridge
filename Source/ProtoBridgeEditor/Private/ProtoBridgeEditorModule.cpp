@@ -49,11 +49,16 @@ void FProtoBridgeEditorModule::ShutdownModule()
 void FProtoBridgeEditorModule::RegisterMenus()
 {
 	FToolMenuOwnerScoped OwnerScoped(this);
-	UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.PlayToolBar");
-	FToolMenuSection& Section = Menu->FindOrAddSection("PluginTools");
+	
+	UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Tools");
+	FToolMenuSection& Section = Menu->FindOrAddSection("ProtoBridge");
+	Section.Label = FText::FromString("ProtoBridge");
 
-	FToolMenuEntry Entry = FToolMenuEntry::InitToolBarButton(
+	FToolMenuEntry Entry = FToolMenuEntry::InitMenuEntry(
 		"ProtoBridgeCompile",
+		LOCTEXT("CompileButtonLabel", "Compile Proto Files"),
+		LOCTEXT("CompileButtonTooltip", "Compile all Proto files using configured settings"),
+		FSlateIcon(FProtoBridgeEditorStyle::GetStyleSetName(), "Icons.Build"),
 		FUIAction(
 			FExecuteAction::CreateRaw(this, &FProtoBridgeEditorModule::OnCompileButtonClicked),
 			FCanExecuteAction::CreateLambda([]() { 
@@ -66,10 +71,7 @@ void FProtoBridgeEditorModule::RegisterMenus()
 				}
 				return false;
 			})
-		),
-		LOCTEXT("CompileButtonLabel", "ProtoBridge"),
-		LOCTEXT("CompileButtonTooltip", "Compile all Proto files"),
-		FSlateIcon(FProtoBridgeEditorStyle::GetStyleSetName(), "Icons.Build")
+		)
 	);
 	
 	Section.AddEntry(Entry);

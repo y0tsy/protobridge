@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Logging/LogVerbosity.h"
 
+class FProtoBridgeCacheManager;
+
 struct FProtoBridgeDiagnostic
 {
 	ELogVerbosity::Type Verbosity;
@@ -27,6 +29,7 @@ struct FCompilationTask
 	FString TempArgFilePath;
 	FString ProtocPath;
 	FString Arguments;
+	FString ConfigHash;
 	TArray<FString> InputFiles;
 };
 
@@ -34,5 +37,6 @@ struct FCompilationPlan
 {
 	TArray<FCompilationTask> Tasks;
 	TArray<FProtoBridgeDiagnostic> Diagnostics;
+	TSharedPtr<FProtoBridgeCacheManager> CacheManager;
 	bool bWasCancelled = false;
 };

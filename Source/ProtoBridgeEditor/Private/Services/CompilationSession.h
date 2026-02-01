@@ -9,6 +9,7 @@
 
 class FTaskExecutor;
 class FProtoBridgeEventBus;
+class FProtoBridgeCacheManager;
 
 enum class ESessionState : uint8
 {
@@ -39,6 +40,7 @@ private:
 	bool TryTransitionState(ESessionState Expected, ESessionState NewState);
 	
 	TSharedPtr<FTaskExecutor> Executor;
+	TSharedPtr<FProtoBridgeCacheManager> CacheManager;
 	
 	mutable FCriticalSection StateMutex;
 	TAtomic<ESessionState> CurrentState;

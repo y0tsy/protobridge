@@ -6,8 +6,10 @@
 #include "Services/PathTokenResolver.h"
 #include "Services/ConfigurationValidator.h"
 #include "Services/ProtoBridgeEventBus.h"
+#include "Services/ProtoBridgeCacheManager.h"
 #include "HAL/FileManager.h"
 #include "ProtoBridgeDefs.h"
+#include "Misc/SecureHash.h"
 
 UE::Tasks::TTask<FCompilationPlan> FCompilationPlanner::LaunchPlan(const FProtoBridgeConfiguration& Config, TSharedRef<FProtoBridgeEventBus> EventBus, const TAtomic<bool>* CancellationFlag)
 {
@@ -21,9 +23,12 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 {
 	FCompilationPlan Plan;
 	FCommandBuilder CommandBuilder;
+	TSharedPtr<FProtoBridgeCacheManager> CacheManager = MakeShared<FProtoBridgeCacheManager>(Config);
+	CacheManager->LoadCache();
+	Plan.CacheManager = CacheManager;
 	
 	EventBus->BroadcastLog(FProtoBridgeDiagnostic(ELogVerbosity::Display, 
-		FString::Printf(TEXT("Generating compilation plan. PluginDir: %s"), *Config.Environment.PluginDirectory)));
+		FString::Printf(TEXT("Generating compilation plan with dependency graph. PluginDir: %s"), *Config.Environment.PluginDirectory)));
 
 	if (!FConfigurationValidator::ValidateSettings(Config, Plan.Diagnostics))
 	{
@@ -54,6 +59,9 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 		FString Source = FPathTokenResolver::ResolvePath(Mapping.SourcePath.Path, Config.Environment);
 		FString Dest = FPathTokenResolver::ResolvePath(Mapping.DestinationPath.Path, Config.Environment);
 
+		FString ConfigHashInput = Mapping.AdditionalArguments + Mapping.ApiMacro + Protoc;
+		FString MappingConfigHash = FMD5::HashAnsiString(*ConfigHashInput);
+
 		TArray<FString> Files;
 		if (!FProtoBridgeFileScanner::FindProtoFiles(Source, Mapping.bRecursive, Mapping.ExcludePatterns, Files, *CancellationFlag))
 		{
@@ -66,10 +74,23 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 			continue;
 		}
 
-		if (Files.Num() > 0)
+		TArray<FString> FilesToCompile;
+		for (const FString& File : Files)
+		{
+			if (!CacheManager->IsFileUpToDate(File, MappingConfigHash))
+			{
+				FilesToCompile.Add(File);
+			}
+			else
+			{
+				Plan.Diagnostics.Emplace(ELogVerbosity::Log, FString::Printf(TEXT("Skipping up-to-date file: %s"), *FPaths::GetCleanFilename(File)));
+			}
+		}
+
+		if (FilesToCompile.Num() > 0)
 		{
 			FString ArgsContent;
-			if (CommandBuilder.BuildContent(Config, Mapping, Source, Dest, Files, ArgsContent))
+			if (CommandBuilder.BuildContent(Config, Mapping, Source, Dest, FilesToCompile, ArgsContent))
 			{
 				FString TempArgFilePath;
 				if (FProtoBridgeFileManager::WriteArgumentFile(ArgsContent, TempArgFilePath))
@@ -80,7 +101,8 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 					Task.DestinationDir = Dest;
 					Task.Arguments = FString::Printf(TEXT("@\"%s\""), *TempArgFilePath);
 					Task.TempArgFilePath = TempArgFilePath;
-					Task.InputFiles = Files; 
+					Task.InputFiles = FilesToCompile;
+					Task.ConfigHash = MappingConfigHash;
 					Plan.Tasks.Add(MoveTemp(Task));
 				}
 				else

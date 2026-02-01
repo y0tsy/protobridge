@@ -2,6 +2,7 @@
 #include "Services/TaskExecutor.h"
 #include "Services/CompilationPlanner.h"
 #include "Services/ProtoBridgeEventBus.h"
+#include "Services/ProtoBridgeCacheManager.h"
 #include "Misc/ScopeLock.h"
 #include "Async/Async.h"
 #include "HAL/PlatformProcess.h"
@@ -116,6 +117,8 @@ void FCompilationSession::OnPlanningCompleted(FCompilationPlan Plan, int32 MaxCo
 		return;
 	}
 
+	CacheManager = Plan.CacheManager;
+
 	for (const FProtoBridgeDiagnostic& Diag : Plan.Diagnostics)
 	{
 		EventBus->BroadcastLog(Diag);
@@ -124,7 +127,7 @@ void FCompilationSession::OnPlanningCompleted(FCompilationPlan Plan, int32 MaxCo
 	if (Plan.Tasks.Num() == 0)
 	{
 		bool bHasErrors = Plan.Diagnostics.ContainsByPredicate([](const FProtoBridgeDiagnostic& D){ return D.Verbosity == ELogVerbosity::Error; });
-		FinishSession(!bHasErrors, bHasErrors ? TEXT("Configuration errors detected") : TEXT("No files to compile"));
+		FinishSession(!bHasErrors, bHasErrors ? TEXT("Configuration errors detected") : TEXT("All files up to date"));
 		return;
 	}
 
@@ -134,11 +137,24 @@ void FCompilationSession::OnPlanningCompleted(FCompilationPlan Plan, int32 MaxCo
 	Executor = NewExecutor;
 
 	TWeakPtr<FCompilationSession> WeakSelf = AsShared();
-	NewExecutor->OnFinished.BindLambda([WeakSelf]()
+	TArray<FCompilationTask> TasksCopy = Plan.Tasks;
+	
+	NewExecutor->OnFinished.BindLambda([WeakSelf, TasksCopy, NewExecutor]()
 	{
 		if (TSharedPtr<FCompilationSession> Self = WeakSelf.Pin())
 		{
-			Self->FinishSession(true, TEXT("")); 
+			if (Self->CacheManager.IsValid() && !NewExecutor->HasErrors() && !NewExecutor->IsCancelled())
+			{
+				for (const FCompilationTask& Task : TasksCopy)
+				{
+					for (const FString& File : Task.InputFiles)
+					{
+						Self->CacheManager->UpdateFileSuccess(File, Task.ConfigHash);
+					}
+				}
+				Self->CacheManager->SaveCache();
+			}
+			Self->FinishSession(!NewExecutor->HasErrors(), NewExecutor->HasErrors() ? TEXT("Finished with errors") : TEXT("Success"));
 		}
 	});
 
@@ -151,6 +167,7 @@ void FCompilationSession::FinishSession(bool bSuccess, const FString& Message)
 		FScopeLock Lock(&StateMutex);
 		CurrentState = ESessionState::Finished;
 		Executor.Reset();
+		CacheManager.Reset();
 	}
 
 	if (CompletionEvent)

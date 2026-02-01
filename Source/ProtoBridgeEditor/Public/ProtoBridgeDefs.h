@@ -19,10 +19,11 @@ struct PROTOBRIDGEEDITOR_API FProtoBridgeDefs
 	inline static const FString BinFolder = TEXT("bin");
 	inline static const FString TempFolder = TEXT("Temp");
 	inline static const FString ProtoWildcard = TEXT("*.proto");
+	inline static const FString IntermediateFolder = TEXT("ProtoBridge");
+	inline static const FString CacheFileName = TEXT("Cache.json");
 	
 	inline static const FString TokenProjectDir = TEXT("{Project}");
 	inline static const FString TokenPluginDir = TEXT("{ProtoBridgePlugin}");
-	inline static const FString TokenPluginMacro = TEXT("{Plugin:");
 	inline static const FString TokenPluginMacroStart = TEXT("{Plugin:");
 
 	inline static const double ExecutionTimeoutSeconds = 60.0;

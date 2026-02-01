@@ -20,6 +20,8 @@ public:
 	void Cancel();
 	
 	bool IsRunning() const;
+	bool IsCancelled() const { return bIsCancelled; }
+	bool HasErrors() const { return bHasErrors; }
 
 	FOnExecutorFinishedDelegate OnFinished;
 
