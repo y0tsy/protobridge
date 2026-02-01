@@ -7,9 +7,7 @@
 #pragma warning(push)
 #pragma warning(disable: 4800 4125 4668 4541 4946)
 #endif
-
 #include <google/protobuf/descriptor.h>
-
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
@@ -72,7 +70,7 @@ void FMapFieldStrategy::WriteToProto(FGeneratorContext& Ctx, const google::proto
 
 			if (ValueTypeInfo)
 			{
-				std::string FuncName = ValueTypeInfo->UtilityClass + "::" + ValueTypeInfo->UtilsFuncPrefix + "ToProto";
+				std::string FuncName = ValueTypeInfo->UtilityClass + "::" + ValueTypeInfo->ToProtoFunc;
 				std::string ValArg = ValueTypeInfo->bIsCustomType ? "&MapVal" : "MapVal";
 				Ctx.Printer.Print("$func$(Elem.Value, $arg$);\n", "func", FuncName, "arg", ValArg);
 			}
@@ -124,7 +122,7 @@ void FMapFieldStrategy::WriteFromProto(FGeneratorContext& Ctx, const google::pro
 
 		if (ValueTypeInfo)
 		{
-			std::string FuncName = ValueTypeInfo->UtilityClass + "::ProtoTo" + ValueTypeInfo->UtilsFuncPrefix;
+			std::string FuncName = ValueTypeInfo->UtilityClass + "::" + ValueTypeInfo->FromProtoFunc;
 			Ctx.Printer.Print("Val = $func$(Elem.second);\n", "func", FuncName);
 		}
 		else

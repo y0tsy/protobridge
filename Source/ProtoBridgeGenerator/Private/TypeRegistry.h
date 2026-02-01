@@ -6,7 +6,8 @@ struct FUnrealTypeInfo
 {
 	std::string UeTypeName;
 	std::string UtilityClass;
-	std::string UtilsFuncPrefix;
+	std::string ToProtoFunc;
+	std::string FromProtoFunc;
 	bool bIsCustomType;
 	bool bCanBeUProperty;
 };
