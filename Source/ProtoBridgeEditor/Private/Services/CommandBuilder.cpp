@@ -45,7 +45,7 @@ bool FCommandBuilder::BuildContent(const FProtoBridgeConfiguration& Config, cons
 	FString TargetApiMacro = Mapping.ApiMacro.IsEmpty() ? Config.ApiMacro : Mapping.ApiMacro;
 	if (!TargetApiMacro.IsEmpty())
 	{
-		SB << TEXT("--ue_opt=dllexport_macro=") << TargetApiMacro << TEXT("\n");
+		SB << TEXT("--ue_opt=") << TargetApiMacro << TEXT("\n");
 	}
 
 	if (!Mapping.AdditionalArguments.IsEmpty())
