@@ -77,7 +77,7 @@ FCompilationPlan FCompilationPlanner::GeneratePlanInternal(const FProtoBridgeCon
 		TArray<FString> FilesToCompile;
 		for (const FString& File : Files)
 		{
-			if (!CacheManager->IsFileUpToDate(File, MappingConfigHash))
+			if (!CacheManager->IsFileUpToDate(File, MappingConfigHash, Source, Dest))
 			{
 				FilesToCompile.Add(File);
 			}

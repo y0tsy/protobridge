@@ -24,7 +24,7 @@ public:
 	void LoadCache();
 	void SaveCache();
 
-	bool IsFileUpToDate(const FString& FilePath, const FString& ConfigContextHash);
+	bool IsFileUpToDate(const FString& FilePath, const FString& ConfigContextHash, const FString& SourceRoot, const FString& DestinationRoot);
 	void UpdateFileSuccess(const FString& FilePath, const FString& ConfigContextHash);
 
 private:
@@ -32,6 +32,7 @@ private:
 	FString CalculateEffectiveHash(const FString& FilePath, const FString& ConfigContextHash, TArray<FString>& OutDependencies);
 	FString ResolveImportPath(const FString& ImportName, const FString& CurrentFileDir);
 	void ExtractImports(const FString& FileContent, TArray<FString>& OutImports);
+	bool CheckOutputsExist(const FString& FilePath, const FString& SourceRoot, const FString& DestinationRoot);
 
 	FProtoBridgeConfiguration Config;
 	FProtoCacheManifest Manifest;

@@ -79,10 +79,15 @@ void FProtoBridgeCacheManager::SaveCache()
 	FFileHelper::SaveStringToFile(OutputString, *CacheFilePath);
 }
 
-bool FProtoBridgeCacheManager::IsFileUpToDate(const FString& FilePath, const FString& ConfigContextHash)
+bool FProtoBridgeCacheManager::IsFileUpToDate(const FString& FilePath, const FString& ConfigContextHash, const FString& SourceRoot, const FString& DestinationRoot)
 {
 	FString NormalizedPath = FilePath;
 	FPaths::NormalizeFilename(NormalizedPath);
+
+	if (!CheckOutputsExist(NormalizedPath, SourceRoot, DestinationRoot))
+	{
+		return false;
+	}
 
 	if (!Manifest.Entries.Contains(NormalizedPath))
 	{
@@ -221,4 +226,34 @@ FString FProtoBridgeCacheManager::ResolveImportPath(const FString& ImportName, c
 	}
 
 	return FString();
+}
+
+bool FProtoBridgeCacheManager::CheckOutputsExist(const FString& FilePath, const FString& SourceRoot, const FString& DestinationRoot)
+{
+	FString NormalizedSource = SourceRoot;
+	FPaths::NormalizeDirectoryName(NormalizedSource);
+	if (!NormalizedSource.EndsWith(TEXT("/"))) NormalizedSource += TEXT("/");
+
+	FString NormalizedDest = DestinationRoot;
+	FPaths::NormalizeDirectoryName(NormalizedDest);
+	if (!NormalizedDest.EndsWith(TEXT("/"))) NormalizedDest += TEXT("/");
+
+	FString RelativePath = FilePath;
+	if (RelativePath.StartsWith(NormalizedSource))
+	{
+		RelativePath = RelativePath.RightChop(NormalizedSource.Len());
+	}
+	else
+	{
+		FPaths::MakePathRelativeTo(RelativePath, *NormalizedSource);
+	}
+
+	FString BaseDestPath = NormalizedDest + RelativePath;
+	FPaths::NormalizeFilename(BaseDestPath);
+
+	FString HeaderPath = FPaths::ChangeExtension(BaseDestPath, TEXT(".pb.h"));
+	FString SourcePath = FPaths::ChangeExtension(BaseDestPath, TEXT(".pb.cc"));
+
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	return PlatformFile.FileExists(*HeaderPath) && PlatformFile.FileExists(*SourcePath);
 }
