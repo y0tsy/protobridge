@@ -10,7 +10,7 @@ namespace ProtoBridge::EncoderRegistry
 		bool EncodeIntegerVariant(const FVariant& V, google::protobuf::Value& Out, const FProtoSerializationContext& Context)
 		{
 			const int64 Val = V.GetValue<int64>();
-			return FProtobufReflectionUtils::ConvertInt64ToProtoValue(Val, Out, Context.Int64Strategy);
+			return FProtobufReflectionUtils::ConvertInt64ToProtoValue(Val, Out, Context);
 		}
 
 		void RegisterNumericEncoders(TMap<EVariantTypes, FVariantEncoder>& OutEncoders)

@@ -24,6 +24,7 @@ public:
 
 private:
 	mutable FRWLock StateLock;
+	bool bIsInitialized;
 	EProtobufInt64Strategy Int64Strategy;
 	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> VariantEncoders;
 };

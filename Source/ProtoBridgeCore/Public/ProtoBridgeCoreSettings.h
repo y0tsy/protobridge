@@ -18,6 +18,9 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Serialization", meta = (DisplayName = "Int64 Serialization Strategy"))
 	EProtobufInt64Strategy Int64SerializationStrategy;
 
+	UPROPERTY(Config, EditAnywhere, Category = "Serialization", meta = (DisplayName = "Best Effort JSON Parsing"))
+	bool bBestEffortJsonParsing;
+
 	UPROPERTY(Config, EditAnywhere, Category = "Limits", meta = (ClampMin = "1024", DisplayName = "Max Any Payload Size (Bytes)"))
 	int32 MaxAnyPayloadSize;
 

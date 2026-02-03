@@ -2,21 +2,38 @@
 #include "Containers/StringConv.h"
 #include "Misc/StringBuilder.h"
 #include "ProtoBridgeLogs.h"
-#include "ProtoBridgeCoreSettings.h"
+
+namespace
+{
+	void ConvertTCharToStdString(const TCHAR* InData, int32 InLen, std::string& OutStr)
+	{
+		if (InLen <= 0)
+		{
+			OutStr.clear();
+			return;
+		}
+		const int32 DestLen = FTCHARToUTF8_Convert::ConvertedLength(InData, InLen);
+		OutStr.resize(DestLen);
+		FTCHARToUTF8_Convert::Convert(&OutStr[0], DestLen, InData, InLen);
+	}
+
+	void ConvertUtf8ToTCharArray(const char* InData, int32 InLen, TArray<TCHAR>& OutArray)
+	{
+		if (InLen <= 0)
+		{
+			OutArray.Empty();
+			return;
+		}
+		const int32 DestLen = FUTF8ToTCHAR_Convert::ConvertedLength(InData, InLen);
+		OutArray.SetNumUninitialized(DestLen + 1);
+		FUTF8ToTCHAR_Convert::Convert(OutArray.GetData(), DestLen, InData, InLen);
+		OutArray[DestLen] = 0;
+	}
+}
 
 void FProtobufStringUtils::FStringToStdString(FStringView InStr, std::string& OutStr)
 {
-	if (InStr.IsEmpty())
-	{
-		OutStr.clear();
-		return;
-	}
-
-	const int32 SrcLen = InStr.Len();
-	const int32 DestLen = FTCHARToUTF8_Convert::ConvertedLength(InStr.GetData(), SrcLen);
-
-	OutStr.resize(DestLen);
-	FTCHARToUTF8_Convert::Convert(&OutStr[0], DestLen, InStr.GetData(), SrcLen);
+	ConvertTCharToStdString(InStr.GetData(), InStr.Len(), OutStr);
 }
 
 std::string FProtobufStringUtils::FStringToStdString(FStringView InStr)
@@ -33,15 +50,7 @@ void FProtobufStringUtils::StdStringToFString(const std::string& InStr, FString&
 		OutStr.Empty();
 		return;
 	}
-
-	const int32 SrcLen = static_cast<int32>(InStr.size());
-	const int32 DestLen = FUTF8ToTCHAR_Convert::ConvertedLength(InStr.data(), SrcLen);
-
-	TArray<TCHAR>& CharArray = OutStr.GetCharArray();
-	CharArray.SetNumUninitialized(DestLen + 1);
-
-	FUTF8ToTCHAR_Convert::Convert(CharArray.GetData(), DestLen, InStr.data(), SrcLen);
-	CharArray[DestLen] = 0;
+	ConvertUtf8ToTCharArray(InStr.data(), static_cast<int32>(InStr.size()), OutStr.GetCharArray());
 }
 
 FString FProtobufStringUtils::StdStringToFString(const std::string& InStr)
@@ -61,12 +70,7 @@ void FProtobufStringUtils::FNameToStdString(const FName& InName, std::string& Ou
 
 	TStringBuilder<NAME_SIZE> Builder;
 	InName.AppendString(Builder);
-
-	const int32 SrcLen = Builder.Len();
-	const int32 DestLen = FTCHARToUTF8_Convert::ConvertedLength(Builder.GetData(), SrcLen);
-
-	OutStr.resize(DestLen);
-	FTCHARToUTF8_Convert::Convert(&OutStr[0], DestLen, Builder.GetData(), SrcLen);
+	ConvertTCharToStdString(Builder.GetData(), Builder.Len(), OutStr);
 }
 
 std::string FProtobufStringUtils::FNameToStdString(const FName& InName)
@@ -145,12 +149,7 @@ void FProtobufStringUtils::FGuidToStdString(const FGuid& InGuid, std::string& Ou
 
 	TStringBuilder<64> Builder;
 	Builder << InGuid;
-	
-	const int32 SrcLen = Builder.Len();
-	const int32 DestLen = FTCHARToUTF8_Convert::ConvertedLength(Builder.GetData(), SrcLen);
-
-	OutStr.resize(DestLen);
-	FTCHARToUTF8_Convert::Convert(&OutStr[0], DestLen, Builder.GetData(), SrcLen);
+	ConvertTCharToStdString(Builder.GetData(), Builder.Len(), OutStr);
 }
 
 std::string FProtobufStringUtils::FGuidToStdString(const FGuid& InGuid)
@@ -202,9 +201,9 @@ void FProtobufStringUtils::ByteArrayToStdString(const TArray<uint8>& InBytes, st
 	}
 }
 
-bool FProtobufStringUtils::StdStringToByteArray(const std::string& InStr, TArray<uint8>& OutBytes)
+bool FProtobufStringUtils::StdStringToByteArray(const std::string& InStr, TArray<uint8>& OutBytes, const FProtoSerializationContext& Context)
 {
-	const int32 MaxSize = GetDefault<UProtoBridgeCoreSettings>()->MaxByteArraySize;
+	const int32 MaxSize = Context.MaxByteArraySize;
 	
 	if (InStr.size() > static_cast<size_t>(MaxSize))
 	{

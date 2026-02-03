@@ -66,9 +66,9 @@ void FProtobufMathUtils::FMatrixToRepeatedField(const FMatrix& InMatrix, google:
 
 bool FProtobufMathUtils::RepeatedFieldToFMatrix(const google::protobuf::RepeatedField<double>& InField, FMatrix& OutMatrix)
 {
-	if (InField.size() < 16)
+	if (InField.size() != 16)
 	{
-		UE_LOG(LogProtoBridgeCore, Error, TEXT("RepeatedFieldToFMatrix: Invalid size %d, expected at least 16"), InField.size());
+		UE_LOG(LogProtoBridgeCore, Error, TEXT("RepeatedFieldToFMatrix: Invalid size %d, expected exactly 16"), InField.size());
 		OutMatrix = FMatrix::Identity;
 		return false;
 	}

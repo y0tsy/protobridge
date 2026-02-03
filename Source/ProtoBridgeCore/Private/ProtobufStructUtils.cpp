@@ -3,7 +3,6 @@
 #include "ProtobufIncludes.h"
 #include "ProtobufReflectionUtils.h"
 #include "ProtoBridgeLogs.h"
-#include "ProtoBridgeCoreSettings.h"
 #include <cmath>
 
 TSharedPtr<FJsonObject> FProtobufStructUtils::ProtoStructToJsonObject(const google::protobuf::Struct& InStruct, const FProtoSerializationContext& Context)
@@ -52,7 +51,7 @@ TArray<TSharedPtr<FJsonValue>> FProtobufStructUtils::ProtoToJsonList(const googl
 
 TSharedPtr<FJsonObject> FProtobufStructUtils::ProtoStructToJsonObjectInternal(const google::protobuf::Struct& InStruct, int32 CurrentDepth, const FProtoSerializationContext& Context)
 {
-	const int32 MaxDepth = GetDefault<UProtoBridgeCoreSettings>()->MaxJsonRecursionDepth;
+	const int32 MaxDepth = Context.MaxJsonRecursionDepth;
 	if (CurrentDepth >= MaxDepth)
 	{
 		UE_LOG(LogProtoBridgeCore, Error, TEXT("Recursion depth exceeded in ProtoStructToJsonObjectInternal"));
@@ -77,7 +76,7 @@ TSharedPtr<FJsonObject> FProtobufStructUtils::ProtoStructToJsonObjectInternal(co
 
 bool FProtobufStructUtils::JsonObjectToProtoStructInternal(const TSharedPtr<FJsonObject>& InJson, google::protobuf::Struct& OutStruct, int32 CurrentDepth, const FProtoSerializationContext& Context)
 {
-	const int32 MaxDepth = GetDefault<UProtoBridgeCoreSettings>()->MaxJsonRecursionDepth;
+	const int32 MaxDepth = Context.MaxJsonRecursionDepth;
 	if (CurrentDepth >= MaxDepth)
 	{
 		UE_LOG(LogProtoBridgeCore, Error, TEXT("Recursion depth exceeded in JsonObjectToProtoStructInternal"));
@@ -102,7 +101,10 @@ bool FProtobufStructUtils::JsonObjectToProtoStructInternal(const TSharedPtr<FJso
 		else
 		{
 			UE_LOG(LogProtoBridgeCore, Error, TEXT("Failed to convert JSON field '%s' to Proto Value"), *Pair.Key);
-			return false;
+			if (!Context.bBestEffortJsonParsing)
+			{
+				return false;
+			}
 		}
 	}
 
@@ -112,7 +114,7 @@ bool FProtobufStructUtils::JsonObjectToProtoStructInternal(const TSharedPtr<FJso
 
 TSharedPtr<FJsonValue> FProtobufStructUtils::ProtoValueToJsonValueInternal(const google::protobuf::Value& InValue, int32 CurrentDepth, const FProtoSerializationContext& Context)
 {
-	const int32 MaxDepth = GetDefault<UProtoBridgeCoreSettings>()->MaxJsonRecursionDepth;
+	const int32 MaxDepth = Context.MaxJsonRecursionDepth;
 	if (CurrentDepth >= MaxDepth)
 	{
 		return nullptr;
@@ -133,7 +135,14 @@ TSharedPtr<FJsonValue> FProtobufStructUtils::ProtoValueToJsonValueInternal(const
 		return MakeShared<FJsonValueBoolean>(InValue.bool_value());
 	
 	case google::protobuf::Value::kStructValue:
-		return MakeShared<FJsonValueObject>(ProtoStructToJsonObjectInternal(InValue.struct_value(), CurrentDepth + 1, Context));
+	{
+		TSharedPtr<FJsonObject> JsonObj = ProtoStructToJsonObjectInternal(InValue.struct_value(), CurrentDepth + 1, Context);
+		if (JsonObj.IsValid())
+		{
+			return MakeShared<FJsonValueObject>(JsonObj);
+		}
+		return nullptr;
+	}
 	
 	case google::protobuf::Value::kListValue:
 	{
@@ -162,7 +171,7 @@ TSharedPtr<FJsonValue> FProtobufStructUtils::ProtoValueToJsonValueInternal(const
 
 bool FProtobufStructUtils::JsonValueToProtoValueInternal(const TSharedPtr<FJsonValue>& InJson, google::protobuf::Value& OutValue, int32 CurrentDepth, const FProtoSerializationContext& Context)
 {
-	const int32 MaxDepth = GetDefault<UProtoBridgeCoreSettings>()->MaxJsonRecursionDepth;
+	const int32 MaxDepth = Context.MaxJsonRecursionDepth;
 	if (CurrentDepth >= MaxDepth)
 	{
 		return false;
@@ -189,15 +198,12 @@ bool FProtobufStructUtils::JsonValueToProtoValueInternal(const TSharedPtr<FJsonV
 	{
 		const double Val = InJson->AsNumber();
 		
-		double IntPart;
-		double FracPart = std::modf(Val, &IntPart);
-
-		if (FMath::IsNearlyZero(FracPart) && 
-			Val >= static_cast<double>(ProtoBridgeConstants::MinSafeInteger) && 
-			Val <= static_cast<double>(ProtoBridgeConstants::MaxSafeInteger))
+		if (Val >= static_cast<double>(ProtoBridgeConstants::MinSafeInteger) && 
+			Val <= static_cast<double>(ProtoBridgeConstants::MaxSafeInteger) &&
+			FMath::Floor(Val) == Val)
 		{
 			const int64 IntVal = static_cast<int64>(Val);
-			if (FProtobufReflectionUtils::ConvertInt64ToProtoValue(IntVal, OutValue, Context.Int64Strategy))
+			if (FProtobufReflectionUtils::ConvertInt64ToProtoValue(IntVal, OutValue, Context))
 			{
 				return true;
 			}

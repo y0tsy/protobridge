@@ -3,6 +3,7 @@
 UProtoBridgeCoreSettings::UProtoBridgeCoreSettings()
 {
 	Int64SerializationStrategy = EProtobufInt64Strategy::AlwaysString;
+	bBestEffortJsonParsing = false;
 	MaxAnyPayloadSize = 32 * 1024 * 1024;
 	MaxByteArraySize = 64 * 1024 * 1024;
 	MaxJsonRecursionDepth = 75;

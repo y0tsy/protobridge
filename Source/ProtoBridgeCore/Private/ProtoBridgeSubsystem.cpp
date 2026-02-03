@@ -3,10 +3,13 @@
 #include "ProtobufStringUtils.h"
 #include "ProtobufIncludes.h"
 #include "ProtoBridgeCoreSettings.h"
+#include "ProtoBridgeLogs.h"
 
 void UProtoBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	
+	bIsInitialized = false;
 
 	const UProtoBridgeCoreSettings* Settings = GetDefault<UProtoBridgeCoreSettings>();
 	Int64Strategy = Settings->Int64SerializationStrategy;
@@ -19,10 +22,13 @@ void UProtoBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	TMap<EVariantTypes, FVariantEncoder> DefaultEncoders;
 	ProtoBridge::EncoderRegistry::GetDefaultEncoders(DefaultEncoders);
 	RegisterEncodersBatch(DefaultEncoders);
+
+	bIsInitialized = true;
 }
 
 void UProtoBridgeSubsystem::Deinitialize()
 {
+	bIsInitialized = false;
 	{
 		FWriteScopeLock Lock(StateLock);
 		VariantEncoders = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>();
@@ -32,16 +38,17 @@ void UProtoBridgeSubsystem::Deinitialize()
 
 void UProtoBridgeSubsystem::RegisterVariantEncoder(EVariantTypes Type, FVariantEncoder Encoder)
 {
-	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> OldMap;
+	if (bIsInitialized)
 	{
-		FReadScopeLock Lock(StateLock);
-		OldMap = VariantEncoders;
+		UE_LOG(LogProtoBridgeCore, Warning, TEXT("Performance Warning: RegisterVariantEncoder called after initialization. This triggers a full map copy under lock. Prefer registering encoders during module startup."));
 	}
 
+	FWriteScopeLock Lock(StateLock);
+
 	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> NewMap;
-	if (OldMap.IsValid())
+	if (VariantEncoders.IsValid())
 	{
-		NewMap = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>(*OldMap);
+		NewMap = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>(*VariantEncoders);
 	}
 	else
 	{
@@ -49,25 +56,22 @@ void UProtoBridgeSubsystem::RegisterVariantEncoder(EVariantTypes Type, FVariantE
 	}
 	
 	NewMap->Add(Type, Encoder);
-
-	{
-		FWriteScopeLock Lock(StateLock);
-		VariantEncoders = NewMap;
-	}
+	VariantEncoders = NewMap;
 }
 
 void UProtoBridgeSubsystem::RegisterEncodersBatch(const TMap<EVariantTypes, FVariantEncoder>& InEncoders)
 {
-	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> OldMap;
+	if (bIsInitialized)
 	{
-		FReadScopeLock Lock(StateLock);
-		OldMap = VariantEncoders;
+		UE_LOG(LogProtoBridgeCore, Warning, TEXT("Performance Warning: RegisterEncodersBatch called after initialization. This triggers a full map copy under lock."));
 	}
 
+	FWriteScopeLock Lock(StateLock);
+
 	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> NewMap;
-	if (OldMap.IsValid())
+	if (VariantEncoders.IsValid())
 	{
-		NewMap = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>(*OldMap);
+		NewMap = MakeShared<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe>(*VariantEncoders);
 	}
 	else
 	{
@@ -75,11 +79,7 @@ void UProtoBridgeSubsystem::RegisterEncodersBatch(const TMap<EVariantTypes, FVar
 	}
 
 	NewMap->Append(InEncoders);
-
-	{
-		FWriteScopeLock Lock(StateLock);
-		VariantEncoders = NewMap;
-	}
+	VariantEncoders = NewMap;
 }
 
 void UProtoBridgeSubsystem::SetInt64SerializationStrategy(EProtobufInt64Strategy InStrategy)
@@ -97,8 +97,15 @@ EProtobufInt64Strategy UProtoBridgeSubsystem::GetInt64SerializationStrategy() co
 FProtoSerializationContext UProtoBridgeSubsystem::CreateSerializationContext() const
 {
 	FReadScopeLock Lock(StateLock);
+	const UProtoBridgeCoreSettings* Settings = GetDefault<UProtoBridgeCoreSettings>();
+	
 	FProtoSerializationContext Context;
 	Context.Int64Strategy = Int64Strategy;
 	Context.Encoders = VariantEncoders;
+	Context.MaxAnyPayloadSize = Settings->MaxAnyPayloadSize;
+	Context.MaxByteArraySize = Settings->MaxByteArraySize;
+	Context.MaxJsonRecursionDepth = Settings->MaxJsonRecursionDepth;
+	Context.bBestEffortJsonParsing = Settings->bBestEffortJsonParsing;
+	
 	return Context;
 }

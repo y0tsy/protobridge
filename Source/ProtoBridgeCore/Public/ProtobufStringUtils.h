@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "ProtoBridgeTypes.h"
 #include <string>
 
 class PROTOBRIDGECORE_API FProtobufStringUtils
@@ -31,5 +32,5 @@ public:
 	static FGuid StdStringToFGuid(const std::string& InStr);
 
 	static void ByteArrayToStdString(const TArray<uint8>& InBytes, std::string& OutStr);
-	static bool StdStringToByteArray(const std::string& InStr, TArray<uint8>& OutBytes);
+	static bool StdStringToByteArray(const std::string& InStr, TArray<uint8>& OutBytes, const FProtoSerializationContext& Context);
 };

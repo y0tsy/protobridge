@@ -1,9 +1,8 @@
 ﻿#include "ProtobufReflectionUtils.h"
 #include "ProtobufIncludes.h"
 #include "ProtoBridgeLogs.h"
-#include "ProtoBridgeCoreSettings.h"
 #include <string>
-#include <atomic>
+#include <cmath>
 
 bool FProtobufReflectionUtils::FVariantToProtoValue(const FVariant& InVariant, google::protobuf::Value& OutValue, const FProtoSerializationContext& Context)
 {
@@ -41,9 +40,9 @@ FVariant FProtobufReflectionUtils::ProtoValueToFVariant(const google::protobuf::
 	}
 }
 
-bool FProtobufReflectionUtils::ConvertInt64ToProtoValue(int64 InVal, google::protobuf::Value& OutValue, EProtobufInt64Strategy Strategy)
+bool FProtobufReflectionUtils::ConvertInt64ToProtoValue(int64 InVal, google::protobuf::Value& OutValue, const FProtoSerializationContext& Context)
 {
-	switch (Strategy)
+	switch (Context.Int64Strategy)
 	{
 	case EProtobufInt64Strategy::AlwaysString:
 	{
@@ -55,10 +54,10 @@ bool FProtobufReflectionUtils::ConvertInt64ToProtoValue(int64 InVal, google::pro
 	{
 		if (InVal > ProtoBridgeConstants::MaxSafeInteger || InVal < ProtoBridgeConstants::MinSafeInteger)
 		{
-			static std::atomic<bool> bWarned{false};
-			if (!bWarned.exchange(true))
+			if (!Context.bHasWarnedPrecisionLoss)
 			{
-				UE_LOG(LogProtoBridgeCore, Warning, TEXT("Int64 value %lld exceeds safe double precision. Precision loss will occur. This warning is shown only once."), InVal);
+				Context.bHasWarnedPrecisionLoss = true;
+				UE_LOG(LogProtoBridgeCore, Warning, TEXT("Int64 value %lld exceeds safe double precision. Precision loss will occur. This warning is shown once per context."), InVal);
 			}
 		}
 		OutValue.set_number_value(static_cast<double>(InVal));
@@ -85,9 +84,9 @@ void FProtobufReflectionUtils::AnyToProto(const FProtobufAny& InAny, google::pro
 	OutAny.set_value(reinterpret_cast<const char*>(InAny.Value.GetData()), InAny.Value.Num());
 }
 
-bool FProtobufReflectionUtils::ProtoToAny(const google::protobuf::Any& InAny, FProtobufAny& OutAny)
+bool FProtobufReflectionUtils::ProtoToAny(const google::protobuf::Any& InAny, FProtobufAny& OutAny, const FProtoSerializationContext& Context)
 {
-	const int32 MaxSize = GetDefault<UProtoBridgeCoreSettings>()->MaxAnyPayloadSize;
+	const int32 MaxSize = Context.MaxAnyPayloadSize;
 	
 	const std::string& Val = InAny.value();
 	if (Val.size() > static_cast<size_t>(MaxSize))

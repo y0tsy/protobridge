@@ -33,8 +33,20 @@ struct PROTOBRIDGECORE_API FProtoSerializationContext
 {
 	EProtobufInt64Strategy Int64Strategy;
 	TSharedPtr<TMap<EVariantTypes, FVariantEncoder>, ESPMode::ThreadSafe> Encoders;
+	
+	int32 MaxAnyPayloadSize;
+	int32 MaxByteArraySize;
+	int32 MaxJsonRecursionDepth;
+	bool bBestEffortJsonParsing;
+	
+	mutable bool bHasWarnedPrecisionLoss;
 
 	FProtoSerializationContext()
 		: Int64Strategy(EProtobufInt64Strategy::AlwaysString)
+		, MaxAnyPayloadSize(32 * 1024 * 1024)
+		, MaxByteArraySize(64 * 1024 * 1024)
+		, MaxJsonRecursionDepth(75)
+		, bBestEffortJsonParsing(false)
+		, bHasWarnedPrecisionLoss(false)
 	{}
 };

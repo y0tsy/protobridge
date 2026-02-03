@@ -8,6 +8,7 @@
 #include "ProtobufStringUtils.h"
 #include "ProtoBridgeTypes.h"
 #include "ProtoBridgeLogs.h"
+#include "Containers/StringConv.h"
 
 namespace google {
 namespace protobuf {
@@ -22,10 +23,10 @@ public:
 	static bool FVariantToProtoValue(const FVariant& InVariant, google::protobuf::Value& OutValue, const FProtoSerializationContext& Context);
 	static FVariant ProtoValueToFVariant(const google::protobuf::Value& InValue);
 	
-	static bool ConvertInt64ToProtoValue(int64 InVal, google::protobuf::Value& OutValue, EProtobufInt64Strategy Strategy);
+	static bool ConvertInt64ToProtoValue(int64 InVal, google::protobuf::Value& OutValue, const FProtoSerializationContext& Context);
 
 	static void AnyToProto(const FProtobufAny& InAny, google::protobuf::Any& OutAny);
-	static bool ProtoToAny(const google::protobuf::Any& InAny, FProtobufAny& OutAny);
+	static bool ProtoToAny(const google::protobuf::Any& InAny, FProtobufAny& OutAny, const FProtoSerializationContext& Context);
 
 	template <typename T_Proto>
 	static void FSoftObjectPathToProto(const FSoftObjectPath& InPath, T_Proto* OutProto) { 
@@ -56,20 +57,25 @@ public:
 
 	template <typename T_Proto>
 	static FGameplayTag ProtoToFGameplayTag(const T_Proto& InProto) { 
-		const FName TagName = FProtobufStringUtils::StdStringToFName(InProto.tag_name());
+		const std::string& Str = InProto.tag_name();
+		if (Str.empty()) return FGameplayTag();
 
-		if (TagName.IsNone())
-		{
-			return FGameplayTag();
-		}
+		const int32 SrcLen = static_cast<int32>(Str.length());
+		const int32 DestLen = FUTF8ToTCHAR_Convert::ConvertedLength(Str.data(), SrcLen);
+		
+		TArray<TCHAR, TInlineAllocator<NAME_SIZE>> Buffer;
+		Buffer.AddUninitialized(DestLen + 1);
+		FUTF8ToTCHAR_Convert::Convert(Buffer.GetData(), DestLen, Str.data(), SrcLen);
+		Buffer[DestLen] = 0;
+
+		const FName TagName(Buffer.GetData());
+		if (TagName.IsNone()) return FGameplayTag();
 
 		FGameplayTag Result = FGameplayTag::RequestGameplayTag(TagName, false);
-		
 		if (!Result.IsValid())
 		{
-			UE_LOG(LogProtoBridgeCore, Warning, TEXT("ProtoToFGameplayTag: Tag '%s' not found in project registry."), *TagName.ToString());
+			UE_LOG(LogProtoBridgeCore, Warning, TEXT("ProtoToFGameplayTag: Tag '%s' not found."), *TagName.ToString());
 		}
-
 		return Result; 
 	}
 
@@ -79,12 +85,23 @@ public:
 		OutProto->clear_gameplay_tags();
 		for (const FGameplayTag& Tag : InContainer) FProtobufStringUtils::FNameToStdString(Tag.GetTagName(), *OutProto->add_gameplay_tags());
 	}
+	
 	template <typename T_Proto>
 	static FGameplayTagContainer ProtoToFGameplayTagContainer(const T_Proto& InProto) {
 		FGameplayTagContainer Result;
 		for (const std::string& TagStr : InProto.gameplay_tags()) 
 		{
-			const FName TagName = FProtobufStringUtils::StdStringToFName(TagStr);
+			if (TagStr.empty()) continue;
+
+			const int32 SrcLen = static_cast<int32>(TagStr.length());
+			const int32 DestLen = FUTF8ToTCHAR_Convert::ConvertedLength(TagStr.data(), SrcLen);
+			
+			TArray<TCHAR, TInlineAllocator<NAME_SIZE>> Buffer;
+			Buffer.AddUninitialized(DestLen + 1);
+			FUTF8ToTCHAR_Convert::Convert(Buffer.GetData(), DestLen, TagStr.data(), SrcLen);
+			Buffer[DestLen] = 0;
+
+			const FName TagName(Buffer.GetData());
 			if (!TagName.IsNone())
 			{
 				FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TagName, false);
